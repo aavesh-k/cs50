@@ -1,533 +1,596 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowRight,
-  BarChart3,
-  Bell,
-  Bookmark,
-  BookmarkCheck,
-  Bot,
-  BriefcaseBusiness,
-  Building2,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  CircleDollarSign,
-  Clock3,
-  Code2,
-  Eye,
-  FileText,
-  Flame,
-  GraduationCap,
-  House,
-  Lightbulb,
-  MessageCircle,
-  Plus,
-  Search,
-  Send,
-  SlidersHorizontal,
-  Sparkles,
-  Tag,
-  Target,
-  TrendingUp,
-  Trophy,
-  Users,
-  X,
+  ArrowDown, ArrowRight, ArrowUp, Bookmark, Bot, Building2, Check, CheckCircle2,
+  ChevronDown, CircleAlert, Eye, FileText, Filter, GraduationCap, House, Link2,
+  LogIn, LogOut, Menu, MessageCircle, Pencil, Plus, Search, Send, Shield, Sparkles,
+  Tag, Trash2, TrendingUp, Trophy, User, Users, X,
 } from "lucide-react";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "./AuthContext";
+import { api, patch, post, remove } from "./api";
 
 const categories = [
-  { name: "All topics", icon: Sparkles, count: "2.4k", color: "blue" },
-  { name: "Interview Prep", icon: Target, count: "486", color: "violet" },
-  { name: "Coding Rounds", icon: Code2, count: "392", color: "cyan" },
-  { name: "Resume & Portfolio", icon: FileText, count: "274", color: "orange" },
-  { name: "Application Process", icon: Send, count: "361", color: "pink" },
-  { name: "Stipend & Pay", icon: CircleDollarSign, count: "198", color: "green" },
-  { name: "Work Culture", icon: Building2, count: "167", color: "purple" },
+  "Interview Prep", "Coding Rounds", "Resume & Portfolio", "Application Process", "Stipend & Pay",
+  "Work Culture", "Offer & PPO", "Remote Internships", "Higher Studies", "Other",
 ];
+const branches = ["CSE", "ECE", "ME", "CE", "EE", "IT", "Other"];
+const reportReasons = ["spam", "duplicate", "inappropriate", "other"];
+const ToastContext = createContext(() => {});
 
-const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
-
-const demoFaqs = [
-  {
-    id: 1,
-    title: "How should I prepare for Google's SDE internship coding rounds?",
-    excerpt:
-      "I have my online assessment in two weeks and want to focus on the highest-impact topics. What was the interview pattern like for recent applicants?",
-    category: "Coding Rounds",
-    company: "Google",
-    tags: ["DSA", "Google", "SDE Intern"],
-    votes: 148,
-    answers: 26,
-    views: "2.8k",
-    author: "Aarav Mehta",
-    initials: "AM",
-    time: "2 hours ago",
-    status: "Answered",
-    trending: true,
-    color: "violet",
-  },
-  {
-    id: 2,
-    title: "Is a cover letter still useful when applying for product internships?",
-    excerpt:
-      "Most portals mark it as optional, but I am applying to early-stage startups and product teams. Does a tailored letter actually improve the odds?",
-    category: "Application Process",
-    company: "Startups",
-    tags: ["Cover Letter", "Product"],
-    votes: 87,
-    answers: 14,
-    views: "1.6k",
-    author: "Meera Kapoor",
-    initials: "MK",
-    time: "4 hours ago",
-    status: "Answered",
-    trending: false,
-    color: "pink",
-  },
-  {
-    id: 3,
-    title: "What is a fair stipend for a remote data analyst internship in 2025?",
-    excerpt:
-      "I received an offer from a mid-size SaaS startup and would like to understand the usual stipend range before discussing the final offer.",
-    category: "Stipend & Pay",
-    company: "SaaS",
-    tags: ["Remote", "Data Analyst", "Negotiation"],
-    votes: 64,
-    answers: 9,
-    views: "980",
-    author: "Kabir Singh",
-    initials: "KS",
-    time: "6 hours ago",
-    status: "Open",
-    trending: false,
-    color: "green",
-  },
-  {
-    id: 4,
-    title: "Microsoft Explore internship: how different is the interview from SWE?",
-    excerpt:
-      "I am a second-year student shortlisted for Explore. Should I expect system design questions or spend all my time practicing coding and behavioral prep?",
-    category: "Interview Prep",
-    company: "Microsoft",
-    tags: ["Microsoft", "Interview", "Explore"],
-    votes: 112,
-    answers: 18,
-    views: "2.1k",
-    author: "Nisha Rao",
-    initials: "NR",
-    time: "Yesterday",
-    status: "Answered",
-    trending: true,
-    color: "cyan",
-  },
-];
-
-const contributors = [
-  { name: "Riya Sharma", initials: "RS", role: "SDE Intern at Adobe", points: "2,480", color: "blue" },
-  { name: "Arjun Nair", initials: "AN", role: "Ex-intern at Amazon", points: "1,940", color: "orange" },
-  { name: "Sneha Iyer", initials: "SI", role: "Product Intern", points: "1,720", color: "pink" },
-  { name: "Dev Patel", initials: "DP", role: "ML Intern at Razorpay", points: "1,460", color: "green" },
-];
-
-const quickQuestions = [
-  ["How do I ask for a PPO conversation?", "5 answers", "Offer & PPO"],
-  ["Should I negotiate my first internship stipend?", "3 answers", "Stipend"],
-  ["Resume feedback for an ML internship?", "2 answers", "Resume"],
-];
-
-const chips = ["Google", "Remote", "SDE Intern", "Resume review", "PPO"];
-
-const emptyQuestion = {
-  title: "",
-  description: "",
-  category: "",
-  company: "",
-  tags: "",
-  author: "",
-};
-
-const categoryColors = {
-  "Interview Prep": "violet",
-  "Coding Rounds": "cyan",
-  "Resume & Portfolio": "orange",
-  "Application Process": "pink",
-  "Stipend & Pay": "green",
-  "Work Culture": "purple",
-};
-
-function getInitials(name) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
+function initials(name = "Anonymous") {
+  return name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+}
+function relativeTime(value) {
+  const seconds = Math.max(1, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+  return new Date(value).toLocaleDateString();
+}
+function authorName(item) {
+  return item.isAnonymous ? "Anonymous" : item.author?.name ?? "Anonymous";
+}
+function useToast() {
+  return useContext(ToastContext);
+}
+function useDebounced(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timeout);
+  }, [delay, value]);
+  return debounced;
+}
+function queryString(values) {
+  const params = new URLSearchParams();
+  Object.entries(values).forEach(([key, value]) => {
+    if (value && value !== "all") params.set(key, value);
+  });
+  return params.toString();
 }
 
-function formatFaq(faq) {
-  const author = faq.author || "Anonymous";
+function ToastProvider({ children }) {
+  const [message, setMessage] = useState("");
+  const timer = useRef();
+  function flash(nextMessage) {
+    setMessage(nextMessage);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setMessage(""), 2800);
+  }
+  return <ToastContext.Provider value={flash}>{children}{message && <div className="toast"><Check size={16} />{message}</div>}</ToastContext.Provider>;
+}
 
-  return {
-    id: faq._id,
-    title: faq.title,
-    excerpt: faq.description,
-    category: faq.category,
-    company: faq.company,
-    tags: faq.tags ?? [],
-    votes: faq.upvoteCount ?? 0,
-    answers: faq.answerCount ?? 0,
-    views: faq.views ?? 0,
-    author,
-    initials: getInitials(author),
-    time: new Date(faq.createdAt).toLocaleDateString(),
-    status: `${faq.status[0].toUpperCase()}${faq.status.slice(1)}`,
-    trending: false,
-    color: categoryColors[faq.category] ?? "blue",
-  };
+function Protected({ children, admin = false }) {
+  const auth = useAuth();
+  const location = useLocation();
+  if (auth.loading) return <PageLoader />;
+  if (!auth.isAuthenticated) return <Navigate to="/login" replace state={{ from: location.pathname, message: "Please login to continue" }} />;
+  if (admin && !auth.isAdmin) return <Navigate to="/faqs" replace />;
+  return children;
+}
+
+function PageLoader() {
+  return <div className="page-loader"><span className="spinner" />Loading CrowdFAQ...</div>;
+}
+
+function Navbar() {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+  function logout() {
+    auth.logout();
+    toast("See you soon!");
+    navigate("/login");
+  }
+  return (
+    <header className="navbar">
+      <div className="nav-inner">
+        <Link className="brand" to="/faqs"><span className="brand-mark"><MessageCircle size={19} /></span><span>Crowd<span>FAQ</span></span></Link>
+        <nav className="main-nav">
+          <Link to="/faqs"><House size={17} /> FAQs</Link>
+          {auth.user && <Link to="/profile"><User size={17} /> Profile</Link>}
+          {auth.isAdmin && <Link to="/admin"><Shield size={17} /> Admin</Link>}
+        </nav>
+        <div className="nav-actions">
+          <Link className="ask-button" to="/faqs/ask"><Plus size={17} /> Ask a Question</Link>
+          {auth.user ? (
+            <>
+              <Link className="profile-btn" to="/profile">
+                <span className="avatar avatar-blue">{initials(auth.user.name)}</span>
+                <span className="profile-copy"><b>{auth.user.name}</b><small>{auth.user.reputation} rep</small></span>
+              </Link>
+              <button className="icon-btn" title="Logout" onClick={logout}><LogOut size={18} /></button>
+            </>
+          ) : <Link className="outline-button" to="/login"><LogIn size={16} /> Login</Link>}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Shell({ children }) {
+  return <div className="app-shell"><Navbar />{children}<footer><Link className="brand" to="/faqs"><span className="brand-mark"><MessageCircle size={17} /></span>Crowd<span>FAQ</span></Link><p>Built for ambitious interns, powered by shared experiences.</p><span>&copy; 2026 CrowdFAQ</span></footer></div>;
+}
+
+function AuthPage({ register = false }) {
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "", branch: "", semester: "", rollNumber: "", rememberMe: false });
+  const [errors, setErrors] = useState({});
+  const [alert, setAlert] = useState("");
+  const [busy, setBusy] = useState(false);
+  const auth = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    if (location.state?.message) toast(location.state.message);
+  }, [location.state, toast]);
+  function update(event) {
+    const { name, value, checked, type } = event.target;
+    setForm((current) => ({ ...current, [name]: type === "checkbox" ? checked : value }));
+  }
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setErrors({});
+    setAlert("");
+    try {
+      const data = await post(register ? "/auth/register" : "/auth/login", form);
+      auth.login(data.token, data.user);
+      toast(register ? "Welcome to CrowdFAQ!" : `Welcome back, ${data.user.name}!`);
+      navigate(location.state?.from ?? "/faqs", { replace: true });
+    } catch (error) {
+      setErrors(error.errors);
+      setAlert(error.message);
+      toast(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <Link className="brand" to="/faqs"><span className="brand-mark"><MessageCircle size={19} /></span><span>Crowd<span>FAQ</span></span></Link>
+        <span className="section-label"><Sparkles size={14} /> Student community</span>
+        <h1>{register ? "Create your account" : "Welcome back"}</h1>
+        <p>{register ? "Join students sharing practical internship knowledge." : "Login to ask, answer, and save useful FAQs."}</p>
+        {alert && <div className="alert-box"><CircleAlert size={17} /><span>{alert}</span></div>}
+        <form className="form-grid" onSubmit={submit}>
+          {register && <Field label="Full name" error={errors.name}><input autoFocus required name="name" value={form.name} onChange={update} /></Field>}
+          <Field label="Email address" error={errors.email}><input autoFocus={!register} required type="email" name="email" value={form.email} onChange={update} /></Field>
+          <Field label="Password" error={errors.password}><input required minLength="8" type="password" name="password" value={form.password} onChange={update} /></Field>
+          {register && <>
+            <Field label="Confirm password" error={errors.confirmPassword}><input required type="password" name="confirmPassword" value={form.confirmPassword} onChange={update} /></Field>
+            <div className="form-row">
+              <Field label="Branch" error={errors.branch}><select name="branch" value={form.branch} onChange={update}><option value="">Select</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></Field>
+              <Field label="Semester" error={errors.semester}><select name="semester" value={form.semester} onChange={update}><option value="">Select</option>{[1, 2, 3, 4, 5, 6, 7, 8].map((semester) => <option key={semester}>{semester}</option>)}</select></Field>
+            </div>
+            <Field label="Roll number (optional)"><input name="rollNumber" value={form.rollNumber} onChange={update} /></Field>
+          </>}
+          {!register && <label className="check-label"><input type="checkbox" name="rememberMe" checked={form.rememberMe} onChange={update} /> Remember me for 30 days</label>}
+          <button className="primary-button" disabled={busy}>{busy ? "Please wait..." : register ? "Create account" : "Login"}</button>
+        </form>
+        <p className="auth-switch">{register ? "Already have an account?" : "New to CrowdFAQ?"} <Link to={register ? "/login" : "/register"}>{register ? "Login" : "Register"}</Link></p>
+      </div>
+    </div>
+  );
+}
+
+function AdminLogin() {
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [busy, setBusy] = useState(false);
+  const auth = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const data = await post("/auth/admin/login", form);
+      auth.login(data.token, data.user);
+      toast("Admin access granted");
+      navigate("/admin");
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="auth-page admin-login-page"><div className="auth-card admin-login-card">
+      <span className="admin-mark"><Shield size={22} /></span><h1>Admin portal</h1><p>Restricted CrowdFAQ moderation access.</p>
+      <form className="form-grid" onSubmit={submit}>
+        <Field label="Admin email"><input autoFocus required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
+        <Field label="Password"><input required type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></Field>
+        <button className="primary-button" disabled={busy}>{busy ? "Checking..." : "Enter dashboard"}</button>
+      </form>
+      <Link className="muted-link" to="/faqs">Back to public FAQs</Link>
+    </div></div>
+  );
+}
+
+function Field({ label, error, children }) {
+  return <label className="field"><span>{label}</span>{children}{error && <small className="field-error">{error}</small>}</label>;
+}
+
+function FeedPage() {
+  const [faqs, setFaqs] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState({ categories: [], company: "", role: "", status: "all", sort: "latest" });
+  const debouncedSearch = useDebounced(search, 400);
+  const debouncedCompany = useDebounced(filters.company, 400);
+  const debouncedRole = useDebounced(filters.role, 400);
+  const toast = useToast();
+  const filterKey = JSON.stringify({ search: debouncedSearch, company: debouncedCompany, role: debouncedRole, categories: filters.categories, status: filters.status, sort: filters.sort });
+  async function fetchFaqs(nextPage = 1, append = false) {
+    setLoading(true);
+    try {
+      const params = queryString({ search: debouncedSearch, company: debouncedCompany, role: debouncedRole, category: filters.categories.join(","), status: filters.status, sort: filters.sort, page: nextPage, limit: 10 });
+      const data = await api(`/faqs?${params}`);
+      setFaqs((current) => append ? [...current, ...data.faqs] : data.faqs);
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+      setPage(nextPage);
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { fetchFaqs(); }, [filterKey]);
+  function toggleCategory(category) {
+    setFilters((current) => ({ ...current, categories: current.categories.includes(category) ? current.categories.filter((item) => item !== category) : [...current.categories, category] }));
+  }
+  function clearFilters() {
+    setSearch("");
+    setFilters({ categories: [], company: "", role: "", status: "all", sort: "latest" });
+  }
+  return (
+    <Shell>
+      <section className="feed-hero"><div><span className="section-label"><Sparkles size={14} /> Built by interns, for interns</span><h1>Find answers. <span>Share experience.</span></h1><p>Real internship questions and practical answers from students who have been there.</p></div>
+        <div className="hero-search"><Search size={20} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search FAQs..." /></div>
+      </section>
+      <main className="page-content">
+        <div className="section-heading"><div><span className="section-label"><MessageCircle size={14} /> Community knowledge</span><h2>Internship FAQs</h2></div><button className="filter-mobile" onClick={() => setFiltersOpen(!filtersOpen)}><Filter size={16} /> Filters</button></div>
+        <div className="feed-layout">
+          <aside className={`filter-panel ${filtersOpen ? "mobile-open" : ""}`}>
+            <div className="panel-title"><span>Filters</span><button onClick={clearFilters}>Clear all</button></div>
+            <FilterSection title="Category">{categories.map((category) => <label className="check-label" key={category}><input type="checkbox" checked={filters.categories.includes(category)} onChange={() => toggleCategory(category)} />{category}</label>)}</FilterSection>
+            <FilterSection title="Company"><input value={filters.company} onChange={(event) => setFilters({ ...filters, company: event.target.value })} placeholder="e.g. Google" /></FilterSection>
+            <FilterSection title="Role"><input value={filters.role} onChange={(event) => setFilters({ ...filters, role: event.target.value })} placeholder="e.g. SDE Intern" /></FilterSection>
+            <FilterSection title="Status">{["all", "open", "answered", "closed"].map((status) => <label className="check-label" key={status}><input type="radio" name="status" checked={filters.status === status} onChange={() => setFilters({ ...filters, status })} />{status[0].toUpperCase() + status.slice(1)}</label>)}</FilterSection>
+          </aside>
+          <section className="feed-panel">
+            <div className="feed-toolbar"><div className="sort-tabs">{[["latest", "Latest"], ["answered", "Most Answered"], ["upvoted", "Most Upvoted"], ["unanswered", "Unanswered"]].map(([value, label]) => <button key={value} className={filters.sort === value ? "active" : ""} onClick={() => setFilters({ ...filters, sort: value })}>{label}</button>)}</div><span>Showing {faqs.length} of {total} results</span></div>
+            <div className="feed-list">{faqs.map((faq) => <FaqCard key={faq._id} faq={faq} onChange={(changed) => setFaqs((items) => items.map((item) => item._id === changed._id ? changed : item))} />)}
+              {!loading && !faqs.length && <EmptyState />}
+              {loading && !faqs.length && <PageLoader />}
+            </div>
+            {hasMore && <button className="load-more" disabled={loading} onClick={() => fetchFaqs(page + 1, true)}>{loading ? "Loading..." : "Load more questions"} <ChevronDown size={16} /></button>}
+          </section>
+        </div>
+      </main>
+    </Shell>
+  );
+}
+
+function FilterSection({ title, children }) {
+  return <div className="filter-section"><b>{title}</b>{children}</div>;
+}
+
+function EmptyState() {
+  return <div className="empty-state"><Search size={30} /><h3>No results found</h3><p>Try another filter or ask the question yourself.</p><Link className="ask-button" to="/faqs/ask"><Plus size={16} /> Ask a question</Link></div>;
+}
+
+function FaqCard({ faq, onChange }) {
+  const auth = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const name = authorName(faq);
+  async function upvote(event) {
+    event.preventDefault();
+    if (!auth.user) return navigate("/login", { state: { from: "/faqs", message: "Please login to continue" } });
+    try {
+      const data = await post(`/faqs/${faq._id}/upvote`, {});
+      onChange({ ...faq, upvotes: data.upvotes, isTrending: data.upvotes > 5 || faq.answerCount > 3 });
+      toast(data.upvoted ? "Upvoted!" : "Upvote removed");
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+  return (
+    <article className="faq-card"><div className="faq-content">
+      <div className="faq-topline"><span className="topic-badge violet">{faq.category}</span>{faq.company && <span className="mini-chip">{faq.company}</span>}{faq.role && <span className="mini-chip">{faq.role}</span>}{faq.isTrending && <span className="trending"><TrendingUp size={12} /> Trending</span>}<span className={`status ${faq.status}`}><i />{faq.status}</span></div>
+      <Link to={`/faqs/${faq._id}`}><h3>{faq.title}</h3></Link><p>{faq.description}</p>
+      <div className="tag-row">{faq.tags?.map((tag) => <span key={tag}>#{tag}</span>)}</div>
+      <div className="faq-footer"><div className="author"><span className="avatar avatar-blue">{initials(name)}</span><span><b>{name}</b><small>asked {relativeTime(faq.createdAt)}</small></span></div>
+        <div className="faq-metrics"><button className="metric-button vote" onClick={upvote}><ArrowUp size={14} /> {faq.upvotes}</button><span><MessageCircle size={14} /> {faq.answerCount}</span><span><Eye size={14} /> {faq.viewCount}</span></div>
+      </div>
+    </div></article>
+  );
+}
+
+function AskFaqPage() {
+  const empty = { title: "", description: "", category: "", company: "", role: "", branch: "", semester: "", tags: [], tag: "", isAnonymous: false };
+  const [form, setForm] = useState(empty);
+  const [similar, setSimilar] = useState([]);
+  const [dismissed, setDismissed] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [busy, setBusy] = useState(false);
+  const debouncedTitle = useDebounced(form.title, 500);
+  const navigate = useNavigate();
+  const toast = useToast();
+  useEffect(() => {
+    if (debouncedTitle.length < 5 || dismissed) return setSimilar([]);
+    api(`/faqs/similar?${queryString({ title: debouncedTitle })}`).then((data) => setSimilar(data.faqs)).catch(() => {});
+  }, [debouncedTitle, dismissed]);
+  function update(event) {
+    const { name, value, checked, type } = event.target;
+    setForm((current) => ({ ...current, [name]: type === "checkbox" ? checked : value }));
+    if (name === "title") setDismissed(false);
+  }
+  function addTag(event) {
+    if (!["Enter", ","].includes(event.key)) return;
+    event.preventDefault();
+    const tag = form.tag.trim().toLowerCase();
+    if (tag && !form.tags.includes(tag) && form.tags.length < 5) setForm({ ...form, tags: [...form.tags, tag], tag: "" });
+  }
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setErrors({});
+    try {
+      const data = await post("/faqs", { ...form, semester: form.semester || undefined });
+      toast("Your question is live!");
+      navigate(`/faqs/${data.faq._id}`);
+    } catch (error) {
+      setErrors(error.errors);
+      toast(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Shell><main className="narrow-page"><div className="page-title"><span className="section-label"><Plus size={14} /> Ask the community</span><h1>Post a new question</h1><p>Include enough detail for other students to give a useful answer.</p></div>
+    <form className="surface form-grid" onSubmit={submit}>
+      <Field label={`Title (${form.title.length}/200)`} error={errors.title}><input autoFocus required minLength="10" maxLength="200" name="title" value={form.title} onChange={update} /></Field>
+      {!!similar.length && <div className="similar-box"><b>Similar questions already exist - check them before posting</b>{similar.map((faq) => <a key={faq._id} href={`/faqs/${faq._id}`} target="_blank" rel="noreferrer">{faq.title}</a>)}<button type="button" onClick={() => { setDismissed(true); setSimilar([]); }}>Post anyway</button></div>}
+      <Field label={`Description (${form.description.length}/5000)`} error={errors.description}><textarea required minLength="20" maxLength="5000" name="description" value={form.description} onChange={update} /></Field>
+      <div className="form-row"><Field label="Category" error={errors.category}><select required name="category" value={form.category} onChange={update}><option value="">Select</option>{categories.map((category) => <option key={category}>{category}</option>)}</select></Field><Field label="Company"><input name="company" value={form.company} onChange={update} placeholder="e.g. Google" /></Field></div>
+      <div className="form-row"><Field label="Role"><input name="role" value={form.role} onChange={update} placeholder="e.g. SDE Intern" /></Field><Field label="Branch"><select name="branch" value={form.branch} onChange={update}><option value="">Select</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></Field><Field label="Semester"><select name="semester" value={form.semester} onChange={update}><option value="">Select</option>{[1, 2, 3, 4, 5, 6, 7, 8].map((semester) => <option key={semester}>{semester}</option>)}</select></Field></div>
+      <Field label="Tags (press Enter or comma, up to 5)" error={errors.tags}><input name="tag" value={form.tag} onChange={update} onKeyDown={addTag} placeholder="e.g. interview" /></Field>
+      <div className="tag-row">{form.tags.map((tag) => <button type="button" key={tag} onClick={() => setForm({ ...form, tags: form.tags.filter((item) => item !== tag) })}>#{tag} <X size={11} /></button>)}</div>
+      <label className="check-label"><input type="checkbox" name="isAnonymous" checked={form.isAnonymous} onChange={update} /> Post anonymously</label>
+      <button className="primary-button" disabled={busy}>{busy ? "Posting..." : "Post question"}</button>
+    </form>
+  </main></Shell>;
+}
+
+function FaqDetailPage() {
+  const { id } = useParams();
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [faq, setFaq] = useState(null);
+  const [answers, setAnswers] = useState([]);
+  const [sort, setSort] = useState("upvoted");
+  const [answerBody, setAnswerBody] = useState("");
+  const [anonymous, setAnonymous] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [report, setReport] = useState(null);
+  const viewed = useRef(false);
+  async function loadFaq() {
+    const data = await api(`/faqs/${id}`);
+    setFaq({ ...data.faq, saved: data.saved, upvoted: data.upvoted });
+  }
+  async function loadAnswers() {
+    setAnswers((await api(`/faqs/${id}/answers?sort=${sort}`)).answers);
+  }
+  useEffect(() => { loadFaq().catch((error) => toast(error.message)); }, [id]);
+  useEffect(() => { loadAnswers().catch((error) => toast(error.message)); }, [id, sort]);
+  useEffect(() => {
+    if (viewed.current) return;
+    viewed.current = true;
+    patch(`/faqs/${id}/view`).then(({ viewCount }) => setFaq((current) => current ? { ...current, viewCount } : current)).catch(() => {});
+  }, [id]);
+  function requireLogin() {
+    if (!auth.user) {
+      navigate("/login", { state: { from: `/faqs/${id}`, message: "Please login to continue" } });
+      return false;
+    }
+    return true;
+  }
+  async function toggleFaqAction(action) {
+    if (!requireLogin()) return;
+    try {
+      const data = await post(`/faqs/${id}/${action}`, {});
+      setFaq((current) => ({ ...current, ...data }));
+      toast(action === "save" ? data.saved ? "Saved to your bookmarks" : "Removed from bookmarks" : data.upvoted ? "Upvoted!" : "Upvote removed");
+    } catch (error) { toast(error.message); }
+  }
+  async function submitAnswer(event) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await post(`/faqs/${id}/answers`, { body: answerBody, isAnonymous: anonymous });
+      setAnswerBody("");
+      setAnonymous(false);
+      toast("Answer posted successfully");
+      await Promise.all([loadFaq(), loadAnswers()]);
+    } catch (error) { toast(error.message); } finally { setBusy(false); }
+  }
+  async function generateSummary() {
+    setSummaryBusy(true);
+    try {
+      const data = await post(`/faqs/${id}/generate-summary`, {});
+      setFaq((current) => ({ ...current, aiSummary: data.summary, aiSummaryUpdatedAt: data.updatedAt }));
+      toast("AI summary updated");
+    } catch (error) { toast(error.message); } finally { setSummaryBusy(false); }
+  }
+  async function share() {
+    await navigator.clipboard.writeText(window.location.href);
+    toast("Link copied to clipboard!");
+  }
+  if (!faq) return <Shell><PageLoader /></Shell>;
+  const name = authorName(faq);
+  const ownsFaq = auth.user?._id === faq.author?._id;
+  return <Shell><main className="detail-page">
+    <section className="surface detail-header">
+      <div className="faq-topline"><span className="topic-badge violet">{faq.category}</span>{faq.company && <span className="mini-chip">{faq.company}</span>}{faq.role && <span className="mini-chip">{faq.role}</span>}<span className={`status ${faq.status}`}><i />{faq.status}</span></div>
+      <h1>{faq.title}</h1><p className="detail-copy">{faq.description}</p><div className="tag-row">{faq.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>
+      <div className="detail-meta"><div className="author"><span className="avatar avatar-blue">{initials(name)}</span><span><b>{name}</b><small>{faq.author?.reputation ?? 0} reputation - asked {relativeTime(faq.createdAt)}</small></span></div><span><Eye size={15} /> {faq.viewCount} views</span></div>
+      <div className="detail-actions"><button className={faq.upvoted ? "active" : ""} onClick={() => toggleFaqAction("upvote")}><ArrowUp size={16} /> {faq.upvotes} Upvote</button><button className={faq.saved ? "active" : ""} onClick={() => toggleFaqAction("save")}><Bookmark size={16} /> {faq.saved ? "Saved" : "Save"}</button><button onClick={share}><Link2 size={16} /> Share</button><button onClick={() => requireLogin() && setReport({ type: "faq", id })}><CircleAlert size={16} /> Report</button></div>
+    </section>
+    <section className="surface summary-box"><span className="section-label"><Bot size={15} /> AI summary</span>{faq.aiSummary ? <><p>{faq.aiSummary}</p><small>Generated from community answers - updated {relativeTime(faq.aiSummaryUpdatedAt)}</small></> : <p>{faq.answerCount >= 3 ? "Turn the discussion into a quick practical summary." : "A summary can be generated once this question has at least 3 answers."}</p>}{faq.answerCount >= 3 && <button className="outline-button" disabled={summaryBusy} onClick={generateSummary}>{summaryBusy ? "Generating..." : faq.aiSummary ? "Regenerate" : "Generate AI summary"}</button>}</section>
+    <section className="answers-section"><div className="answers-heading"><h2>{faq.answerCount} Answers</h2><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="upvoted">Most upvoted</option><option value="newest">Newest</option><option value="oldest">Oldest</option></select></div>
+      {answers.map((answer) => <AnswerCard key={answer._id} answer={answer} ownsFaq={ownsFaq} onReload={loadAnswers} onReport={() => setReport({ type: "answer", id: answer._id })} />)}
+      {!answers.length && <div className="surface empty-state"><MessageCircle size={28} /><h3>No answers yet</h3><p>Be the first to help this student.</p></div>}
+    </section>
+    <section className="surface answer-form" id="answer"><h2>Write Your Answer</h2>{auth.user ? <form onSubmit={submitAnswer}><textarea required minLength="20" maxLength="5000" value={answerBody} onChange={(event) => setAnswerBody(event.target.value)} placeholder="Share a clear, practical answer..." /><div className="answer-form-footer"><label className="check-label"><input type="checkbox" checked={anonymous} onChange={(event) => setAnonymous(event.target.checked)} /> Answer anonymously</label><small>{answerBody.length}/5000</small><button className="primary-button" disabled={busy}>{busy ? "Posting..." : "Post answer"}</button></div></form> : <div className="login-prompt">You must be logged in to post an answer. <Link className="outline-button" to="/login" state={{ from: `/faqs/${id}` }}>Login</Link></div>}</section>
+    {report && <ReportModal report={report} onClose={() => setReport(null)} />}
+  </main></Shell>;
+}
+
+function AnswerCard({ answer, ownsFaq, onReload, onReport }) {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const name = authorName(answer);
+  const upvoted = answer.upvotedBy.includes(auth.user?._id);
+  const downvoted = answer.downvotedBy.includes(auth.user?._id);
+  async function vote(type) {
+    if (!auth.user) return navigate("/login", { state: { message: "Please login to continue" } });
+    try { await post(`/answers/${answer._id}/${type}`, {}); toast(type === "upvote" ? "Vote updated" : "Feedback updated"); onReload(); } catch (error) { toast(error.message); }
+  }
+  async function accept() {
+    try { await patch(`/answers/${answer._id}/accept`); toast("Best Answer marked!"); onReload(); } catch (error) { toast(error.message); }
+  }
+  return <article className={`surface answer-card ${answer.isAccepted ? "accepted" : ""}`}>{answer.isAccepted && <div className="best-answer"><CheckCircle2 size={15} /> Best Answer</div>}<div className="answer-card-header"><div className="author"><span className="avatar avatar-green">{initials(name)}</span><span><b>{name}</b><small>{answer.author?.reputation ?? 0} reputation - answered {relativeTime(answer.createdAt)}</small></span></div><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? <CheckCircle2 size={13} /> : <CircleAlert size={13} />}{answer.isVerified ? "Verified" : "Unverified"}</span></div><p>{answer.body}</p><div className="answer-actions"><button className={upvoted ? "active" : ""} onClick={() => vote("upvote")}><ArrowUp size={15} /> {answer.upvotes}</button><button className={downvoted ? "active" : ""} onClick={() => vote("downvote")}><ArrowDown size={15} /> {answer.downvotes}</button>{ownsFaq && <button disabled={!answer.isVerified} title={answer.isVerified ? "Mark as Best Answer" : "Admin verification required"} onClick={accept}><Check size={15} /> Accept</button>}<button onClick={onReport}><CircleAlert size={15} /> Report</button></div></article>;
+}
+
+function ReportModal({ report, onClose }) {
+  const [reason, setReason] = useState("spam");
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    try { await post(`/${report.type === "faq" ? "faqs" : "answers"}/${report.id}/report`, { reason }); toast("Report submitted"); onClose(); } catch (error) { toast(error.message); } finally { setBusy(false); }
+  }
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="composer" onMouseDown={(event) => event.stopPropagation()} onSubmit={submit}><button type="button" className="close-button" onClick={onClose}><X size={18} /></button><h2>Report content</h2><p>Choose the reason that best describes the issue.</p>{reportReasons.map((item) => <label className="check-label" key={item}><input type="radio" name="reason" checked={reason === item} onChange={() => setReason(item)} />{item[0].toUpperCase() + item.slice(1)}</label>)}<button className="primary-button" disabled={busy}>{busy ? "Submitting..." : "Submit report"}</button></form></div>;
+}
+
+function ProfilePage() {
+  const auth = useAuth();
+  const { id } = useParams();
+  const profileId = id ?? auth.user?._id;
+  const [data, setData] = useState(null);
+  const [saved, setSaved] = useState([]);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
+  const toast = useToast();
+  const own = profileId === auth.user?._id;
+  async function load() {
+    const profile = await api(`/users/${profileId}`);
+    setData(profile);
+    setForm(profile.user);
+    if (own) setSaved((await api(`/users/${profileId}/saved-faqs`)).faqs);
+  }
+  useEffect(() => { load().catch((error) => toast(error.message)); }, [profileId]);
+  async function save(event) {
+    event.preventDefault();
+    try {
+      const { user } = await patch(`/users/${profileId}`, form);
+      auth.updateUser(user);
+      setData({ ...data, user });
+      setEditing(false);
+      toast("Profile updated");
+    } catch (error) { toast(error.message); }
+  }
+  if (!data) return <Shell><PageLoader /></Shell>;
+  const { user, faqs, answers } = data;
+  return <Shell><main className="profile-page"><section className="surface profile-header"><span className="avatar avatar-blue large">{initials(user.name)}</span><div><h1>{user.name}</h1><p>{user.branch || "Branch not set"} {user.semester && `- Semester ${user.semester}`}</p><b>{user.reputation} reputation</b></div>{own && <button className="outline-button" onClick={() => setEditing(!editing)}><Pencil size={15} /> Edit profile</button>}</section>
+    <section className="stats-grid"><Stat label="Questions asked" value={user.questionsAsked} /><Stat label="Answers given" value={user.answersGiven} /><Stat label="Accepted answers" value={user.acceptedAnswers} /><Stat label="Reputation" value={user.reputation} /></section>
+    {editing && <form className="surface form-grid profile-edit" onSubmit={save}><h2>Edit profile</h2><Field label="Name"><input value={form.name ?? ""} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><div className="form-row"><Field label="Branch"><select value={form.branch ?? ""} onChange={(event) => setForm({ ...form, branch: event.target.value })}><option value="">Select</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></Field><Field label="Semester"><select value={form.semester ?? ""} onChange={(event) => setForm({ ...form, semester: event.target.value })}><option value="">Select</option>{[1, 2, 3, 4, 5, 6, 7, 8].map((semester) => <option key={semester}>{semester}</option>)}</select></Field></div><Field label={`Bio (${form.bio?.length ?? 0}/200)`}><textarea maxLength="200" value={form.bio ?? ""} onChange={(event) => setForm({ ...form, bio: event.target.value })} /></Field><Field label="Profile picture URL"><input value={form.profilePicture ?? ""} onChange={(event) => setForm({ ...form, profilePicture: event.target.value })} /></Field><button className="primary-button">Save profile</button></form>}
+    <ProfileList title="Recent questions" empty="No questions posted yet.">{faqs.map((faq) => <Link key={faq._id} to={`/faqs/${faq._id}`}>{faq.title}<small>{faq.category} - {relativeTime(faq.createdAt)}</small></Link>)}</ProfileList>
+    <ProfileList title="Recent answers" empty="No answers posted yet.">{answers.map((answer) => <Link key={answer._id} to={`/faqs/${answer.faq?._id}`}>{answer.faq?.title}<small>{answer.body.slice(0, 100)}</small></Link>)}</ProfileList>
+    {own && <ProfileList title="Saved FAQs" empty="No bookmarks yet.">{saved.map((faq) => <Link key={faq._id} to={`/faqs/${faq._id}`}>{faq.title}<small>{faq.category}</small></Link>)}</ProfileList>}
+  </main></Shell>;
+}
+
+function ProfileList({ title, empty, children }) {
+  return <section className="surface profile-list"><h2>{title}</h2>{children.length ? children : <p>{empty}</p>}</section>;
+}
+function Stat({ label, value }) {
+  return <div className="surface stat-card"><b>{value}</b><span>{label}</span></div>;
+}
+
+function AdminPage() {
+  const [tab, setTab] = useState("overview");
+  const [search, setSearch] = useState("");
+  const [stats, setStats] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [faqs, setFaqs] = useState([]);
+  const [answers, setAnswers] = useState([]);
+  const [reports, setReports] = useState([]);
+  const toast = useToast();
+  async function load() {
+    try {
+      const [nextStats, nextUsers, nextFaqs, nextAnswers, nextReports] = await Promise.all([api("/admin/stats"), api("/admin/users"), api("/admin/faqs"), api("/admin/answers"), api("/admin/reports")]);
+      setStats(nextStats); setUsers(nextUsers.users); setFaqs(nextFaqs.faqs); setAnswers(nextAnswers.answers); setReports(nextReports.reports);
+    } catch (error) { toast(error.message); }
+  }
+  useEffect(() => { load(); }, []);
+  async function ban(id) { try { await patch(`/admin/users/${id}/ban`); toast("User status updated"); load(); } catch (error) { toast(error.message); } }
+  async function deleteFaq(id) { if (!window.confirm("Delete this FAQ and all of its answers?")) return; try { await remove(`/admin/faqs/${id}`); toast("FAQ deleted"); load(); } catch (error) { toast(error.message); } }
+  async function resolve(id) { try { await patch(`/admin/reports/${id}`); toast("Report resolved"); load(); } catch (error) { toast(error.message); } }
+  async function verifyAnswer(id) { try { const data = await patch(`/admin/answers/${id}/verify`); toast(data.answer.isVerified ? "Answer verified" : "Answer marked unverified"); load(); } catch (error) { toast(error.message); } }
+  async function deleteReportedContent(report) {
+    if (!window.confirm("Delete the reported content?")) return;
+    try {
+      await remove(report.contentType === "faq" ? `/admin/faqs/${report.content?._id}` : `/answers/${report.content?._id}`);
+      toast("Reported content deleted");
+      load();
+    } catch (error) { toast(error.message); }
+  }
+  if (!stats) return <Shell><PageLoader /></Shell>;
+  const value = search.toLowerCase();
+  const visibleUsers = users.filter((user) => !value || user.name.toLowerCase().includes(value) || user.email.toLowerCase().includes(value));
+  const visibleFaqs = faqs.filter((faq) => !value || faq.title.toLowerCase().includes(value));
+  return <Shell><main className="admin-page"><aside className="admin-sidebar"><span><Shield size={17} /> Admin dashboard</span>{[["overview", "Overview"], ["users", "Users"], ["faqs", "FAQs"], ["answers", "Answers"], ["reports", "Reports"]].map(([value, label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => { setTab(value); setSearch(""); }}>{label}</button>)}</aside><section className="admin-main">
+    <div className="page-title"><span className="section-label"><Shield size={14} /> Moderation</span><h1>{tab[0].toUpperCase() + tab.slice(1)}</h1></div>
+    {(tab === "users" || tab === "faqs") && <div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}...`} /></div>}
+    {tab === "overview" && <div className="stats-grid">{Object.entries({ "Total users": stats.users, "Total FAQs": stats.faqs, "Total answers": stats.answers, "Open FAQs": stats.openFaqs, "Answered FAQs": stats.answeredFaqs, "Reports pending": stats.reportsPending }).map(([label, value]) => <Stat key={label} label={label} value={value} />)}</div>}
+    {tab === "users" && <AdminTable headings={["Name", "Email", "Branch", "Rep", "Questions", "Answers", "Action"]}>{visibleUsers.map((user) => <tr key={user._id}><td><Link to={`/profile/${user._id}`}>{user.name}</Link></td><td>{user.email}</td><td>{user.branch || "-"}</td><td>{user.reputation}</td><td>{user.questionsAsked}</td><td>{user.answersGiven}</td><td><button className="table-button" onClick={() => ban(user._id)}>{user.isBanned ? "Unban" : "Ban"}</button></td></tr>)}</AdminTable>}
+    {tab === "faqs" && <AdminTable headings={["Title", "Author", "Category", "Status", "Answers", "Action"]}>{visibleFaqs.map((faq) => <tr key={faq._id}><td><Link to={`/faqs/${faq._id}`}>{faq.title}</Link></td><td>{authorName(faq)}</td><td>{faq.category}</td><td>{faq.status}</td><td>{faq.answerCount}</td><td><button className="table-button danger" onClick={() => deleteFaq(faq._id)}><Trash2 size={14} /> Delete</button></td></tr>)}</AdminTable>}
+    {tab === "answers" && <AdminTable headings={["Answer", "FAQ", "Author", "Status", "Action"]}>{answers.map((answer) => <tr key={answer._id}><td>{answer.body.slice(0, 90)}</td><td><Link to={`/faqs/${answer.faq?._id}`}>{answer.faq?.title}</Link></td><td>{authorName(answer)}</td><td><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? "Verified" : "Unverified"}</span></td><td><button className="table-button" onClick={() => verifyAnswer(answer._id)}>{answer.isVerified ? "Mark unverified" : "Verify answer"}</button></td></tr>)}</AdminTable>}
+    {tab === "reports" && <AdminTable headings={["Type", "Reporter", "Reason", "Content", "Date", "Status", "Action"]}>{reports.map((report) => <tr key={report._id}><td>{report.contentType}</td><td>{report.reporter?.name}</td><td>{report.reason}</td><td>{report.content?.title ?? report.content?.body?.slice(0, 70) ?? "Content removed"}</td><td>{new Date(report.createdAt).toLocaleDateString()}</td><td>{report.resolved ? "Resolved" : "Pending"}</td><td className="table-actions">{!report.resolved && <button className="table-button" onClick={() => resolve(report._id)}>Dismiss</button>}{report.content && <button className="table-button danger" onClick={() => deleteReportedContent(report)}>Delete content</button>}</td></tr>)}</AdminTable>}
+  </section></main></Shell>;
+}
+function AdminTable({ headings, children }) {
+  return <div className="surface table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
 }
 
 function App() {
-  const [activeCategory, setActiveCategory] = useState("All topics");
-  const [activeSort, setActiveSort] = useState("Trending");
-  const [search, setSearch] = useState("");
-  const [saved, setSaved] = useState([2]);
-  const [savedFaqs, setSavedFaqs] = useState([]);
-  const [showComposer, setShowComposer] = useState(false);
-  const [toast, setToast] = useState("");
-  const [mobileFilters, setMobileFilters] = useState(false);
-  const [question, setQuestion] = useState(emptyQuestion);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetch(`${apiUrl}/api/faqs`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Could not load saved FAQs");
-        return response.json();
-      })
-      .then(({ faqs }) => setSavedFaqs(faqs.map(formatFaq)))
-      .catch(() => flash("Could not load saved FAQs. Is the API running?"));
-  }, []);
-
-  const faqs = useMemo(() => [...savedFaqs, ...demoFaqs], [savedFaqs]);
-
-  const visibleFaqs = useMemo(() => {
-    return faqs.filter((faq) => {
-      const hasCategory = activeCategory === "All topics" || faq.category === activeCategory;
-      const value = search.toLowerCase();
-      const matchesSearch =
-        !value ||
-        faq.title.toLowerCase().includes(value) ||
-        faq.excerpt.toLowerCase().includes(value) ||
-        faq.tags.some((tag) => tag.toLowerCase().includes(value));
-      return hasCategory && matchesSearch;
-    });
-  }, [activeCategory, faqs, search]);
-
-  function flash(message) {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2400);
-  }
-
-  function toggleSaved(id) {
-    setSaved((current) =>
-      current.includes(id) ? current.filter((savedId) => savedId !== id) : [...current, id],
-    );
-    flash(saved.includes(id) ? "Removed from saved FAQs" : "Saved for later");
-  }
-
-  function updateQuestion(event) {
-    const { name, value } = event.target;
-    setQuestion((current) => ({ ...current, [name]: value }));
-  }
-
-  async function submitQuestion(event) {
-    event.preventDefault();
-    setIsSubmitting(true);
-
-    try {
-      const response = await fetch(`${apiUrl}/api/faqs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...question,
-          author: question.author || "Anonymous",
-          tags: question.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-        }),
-      });
-      const result = await response.json();
-
-      if (!response.ok) throw new Error(result.message || "Could not save question");
-
-      setSavedFaqs((current) => [formatFaq(result.faq), ...current]);
-      setQuestion(emptyQuestion);
-      setShowComposer(false);
-      flash("Question saved to MongoDB");
-    } catch (error) {
-      flash(error.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="app-shell">
-      <header className="navbar">
-        <div className="nav-inner">
-          <a className="brand" href="#">
-            <span className="brand-mark"><MessageCircle size={19} strokeWidth={2.7} /></span>
-            <span>Crowd<span>FAQ</span></span>
-          </a>
-          <nav className="main-nav">
-            <a className="active" href="#"><House size={17} /> Home</a>
-            <a href="#browse"><MessageCircle size={17} /> Browse FAQs</a>
-            <a href="#contributors"><Trophy size={17} /> Leaderboard</a>
-          </nav>
-          <div className="nav-actions">
-            <button className="icon-btn notification"><Bell size={19} /><i /></button>
-            <button className="ask-button" onClick={() => setShowComposer(true)}>
-              <Plus size={17} /> Ask a Question
-            </button>
-            <button className="profile-btn">
-              <span className="avatar avatar-blue">AS</span>
-              <span className="profile-copy"><b>Ananya</b><small>320 rep</small></span>
-              <ChevronDown size={15} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main>
-        <section className="hero">
-          <div className="orb orb-one" />
-          <div className="orb orb-two" />
-          <div className="hero-inner">
-            <div className="hero-copy">
-              <div className="eyebrow"><Sparkles size={15} /> Built by interns, for interns</div>
-              <h1>Navigate internships<br /><span>with confidence.</span></h1>
-              <p>Real questions. Honest answers. Everything you need to land your next opportunity and make it count.</p>
-              <div className="hero-search">
-                <Search size={22} />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search 2,400+ internship FAQs..."
-                />
-                <button onClick={() => document.querySelector("#browse").scrollIntoView({ behavior: "smooth" })}>
-                  Search
-                </button>
-              </div>
-              <div className="popular">
-                <span>Popular:</span>
-                {chips.map((chip) => <button key={chip} onClick={() => setSearch(chip)}>{chip}</button>)}
-              </div>
-            </div>
-            <div className="hero-card">
-              <div className="hero-card-top">
-                <span className="hero-icon"><Lightbulb size={20} /></span>
-                <span><b>Today's insight</b><small>From the community</small></span>
-                <Sparkles className="sparkle" size={18} />
-              </div>
-              <p>"Start preparing your stories before your interview. Strong answers need structure, not memorization."</p>
-              <div className="insight-footer">
-                <span className="avatar avatar-violet">RN</span>
-                <span><b>Rohan N.</b><small>Ex-intern at Microsoft</small></span>
-                <button><ArrowRight size={17} /></button>
-              </div>
-            </div>
-          </div>
-          <div className="stats-bar">
-            <div><b>2,400+</b><span><MessageCircle size={16} /> Questions answered</span></div>
-            <div><b>8,600+</b><span><Users size={16} /> Interns helping</span></div>
-            <div><b>94%</b><span><CheckCircle2 size={16} /> Response rate</span></div>
-            <div><b>180+</b><span><Building2 size={16} /> Companies covered</span></div>
-          </div>
-        </section>
-
-        <section className="content-section" id="browse">
-          <div className="section-heading">
-            <div>
-              <span className="section-label"><Flame size={15} /> Community knowledge</span>
-              <h2>Explore internship FAQs</h2>
-              <p>Learn from experiences shared by interns and students like you.</p>
-            </div>
-            <button className="filter-mobile" onClick={() => setMobileFilters(!mobileFilters)}>
-              <SlidersHorizontal size={17} /> Filters
-            </button>
-          </div>
-
-          <div className="workspace">
-            <aside className={`categories-panel ${mobileFilters ? "mobile-open" : ""}`}>
-              <div className="panel-title"><span>Explore topics</span><SlidersHorizontal size={16} /></div>
-              {categories.map(({ name, icon: Icon, count, color }) => (
-                <button
-                  className={`category-row ${activeCategory === name ? "selected" : ""}`}
-                  key={name}
-                  onClick={() => {
-                    setActiveCategory(name);
-                    setMobileFilters(false);
-                  }}
-                >
-                  <span className={`category-icon ${color}`}><Icon size={16} /></span>
-                  <span>{name}</span>
-                  <small>{count}</small>
-                </button>
-              ))}
-              <div className="career-card">
-                <span className="career-icon"><GraduationCap size={19} /></span>
-                <b>Internship starter guide</b>
-                <p>A curated guide to help you prepare, apply, and thrive.</p>
-                <button>Explore guide <ArrowRight size={14} /></button>
-              </div>
-            </aside>
-
-            <div className="feed-panel">
-              <div className="feed-toolbar">
-                <div className="sort-tabs">
-                  {["Trending", "Latest", "Unanswered"].map((sort) => (
-                    <button
-                      key={sort}
-                      className={activeSort === sort ? "active" : ""}
-                      onClick={() => setActiveSort(sort)}
-                    >
-                      {sort === "Trending" && <Flame size={15} />}
-                      {sort}
-                    </button>
-                  ))}
-                </div>
-                <span>{visibleFaqs.length} questions</span>
-              </div>
-
-              <div className="feed-list">
-                {visibleFaqs.map((faq) => (
-                  <article className="faq-card" key={faq.id}>
-                    <div className="faq-content">
-                      <div className="faq-topline">
-                        <span className={`topic-badge ${faq.color}`}>{faq.category}</span>
-                        {faq.trending && <span className="trending"><TrendingUp size={13} /> Trending</span>}
-                        <span className={`status ${faq.status.toLowerCase()}`}>
-                          <i />{faq.status}
-                        </span>
-                      </div>
-                      <h3>{faq.title}</h3>
-                      <p>{faq.excerpt}</p>
-                      <div className="tag-row">
-                        {faq.tags.map((tag) => <button key={tag}>#{tag}</button>)}
-                      </div>
-                      <div className="faq-footer">
-                        <div className="author">
-                          <span className={`avatar avatar-${faq.color}`}>{faq.initials}</span>
-                          <span><b>{faq.author}</b><small>asked {faq.time}</small></span>
-                        </div>
-                        <div className="faq-metrics">
-                          <span className="vote"><TrendingUp size={15} /> {faq.votes}</span>
-                          <span><MessageCircle size={15} /> {faq.answers}</span>
-                          <span><Eye size={15} /> {faq.views}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      aria-label="Save FAQ"
-                      className={`save-button ${saved.includes(faq.id) ? "saved" : ""}`}
-                      onClick={() => toggleSaved(faq.id)}
-                    >
-                      {saved.includes(faq.id) ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
-                    </button>
-                  </article>
-                ))}
-                {!visibleFaqs.length && (
-                  <div className="empty-state">
-                    <Search size={30} />
-                    <h3>No matching FAQs yet</h3>
-                    <p>Try another search or be the first to ask the community.</p>
-                    <button className="ask-button" onClick={() => setShowComposer(true)}><Plus size={17} /> Ask a Question</button>
-                  </div>
-                )}
-              </div>
-              {!!visibleFaqs.length && <button className="load-more">Load more questions <ChevronDown size={16} /></button>}
-            </div>
-
-            <aside className="right-panel">
-              <div className="side-card" id="contributors">
-                <div className="side-card-title">
-                  <span><Trophy size={17} /> Top contributors</span>
-                  <button>View all</button>
-                </div>
-                <div className="contributors">
-                  {contributors.map((person, index) => (
-                    <div className="contributor" key={person.name}>
-                      <span className="rank">{index + 1}</span>
-                      <span className={`avatar avatar-${person.color}`}>{person.initials}</span>
-                      <span className="person-copy"><b>{person.name}</b><small>{person.role}</small></span>
-                      <span className="points"><Trophy size={12} />{person.points}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="side-card unanswered">
-                <div className="side-card-title">
-                  <span><Clock3 size={17} /> Needs your input</span>
-                </div>
-                {quickQuestions.map(([question, answers, tag]) => (
-                  <button className="quick-question" key={question}>
-                    <b>{question}</b>
-                    <span><small>{tag}</small><em>{answers}</em></span>
-                  </button>
-                ))}
-                <button className="text-link">See unanswered questions <ArrowRight size={14} /></button>
-              </div>
-            </aside>
-          </div>
-        </section>
-
-        <section className="cta-section">
-          <div>
-            <span className="section-label"><Bot size={15} /> Knowledge grows when shared</span>
-            <h2>Have a question? Your answer<br />might help someone too.</h2>
-          </div>
-          <button className="cta-button" onClick={() => setShowComposer(true)}>
-            <Plus size={18} /> Ask the community
-          </button>
-        </section>
-      </main>
-
-      <footer>
-        <a className="brand" href="#"><span className="brand-mark"><MessageCircle size={17} /></span>Crowd<span>FAQ</span></a>
-        <p>Built for ambitious interns, powered by shared experiences.</p>
-        <span>&copy; 2026 CrowdFAQ</span>
-      </footer>
-
-      {showComposer && (
-        <div className="modal-backdrop" onMouseDown={() => setShowComposer(false)}>
-          <form className="composer" onSubmit={submitQuestion} onMouseDown={(event) => event.stopPropagation()}>
-            <button type="button" className="close-button" onClick={() => setShowComposer(false)}><X size={19} /></button>
-            <span className="composer-icon"><MessageCircle size={22} /></span>
-            <h2>Ask the community</h2>
-            <p>Share enough context to help other interns give you a useful answer.</p>
-            <label>Question title<input required minLength="10" name="title" value={question.title} onChange={updateQuestion} placeholder="e.g. How should I prepare for an SDE interview?" /></label>
-            <label>Details<textarea required minLength="20" name="description" value={question.description} onChange={updateQuestion} placeholder="Add context so the community can give you a useful answer." /></label>
-            <label>Topic
-              <select required name="category" value={question.category} onChange={updateQuestion}>
-                <option value="" disabled>Select a category</option>
-                {categories.slice(1).map(({ name }) => <option key={name}>{name}</option>)}
-              </select>
-            </label>
-            <label>Company<input name="company" value={question.company} onChange={updateQuestion} placeholder="Optional" /></label>
-            <label>Tags<input name="tags" value={question.tags} onChange={updateQuestion} placeholder="e.g. DSA, Remote, Interview" /></label>
-            <label>Your name<input name="author" value={question.author} onChange={updateQuestion} placeholder="Anonymous" /></label>
-            <div className="composer-actions">
-              <button type="button" className="cancel" onClick={() => setShowComposer(false)}>Cancel</button>
-              <button type="submit" className="ask-button" disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : "Post question"} <ArrowRight size={16} />
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {toast && <div className="toast"><Check size={16} />{toast}</div>}
-    </div>
-  );
+  return <ToastProvider><Routes>
+    <Route path="/" element={<Navigate to="/faqs" replace />} />
+    <Route path="/login" element={<AuthPage />} />
+    <Route path="/register" element={<AuthPage register />} />
+    <Route path="/admin/login" element={<AdminLogin />} />
+    <Route path="/faqs" element={<FeedPage />} />
+    <Route path="/faqs/ask" element={<Protected><AskFaqPage /></Protected>} />
+    <Route path="/faqs/:id" element={<FaqDetailPage />} />
+    <Route path="/faqs/:id/answer" element={<Protected><FaqDetailPage /></Protected>} />
+    <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
+    <Route path="/profile/:id" element={<ProfilePage />} />
+    <Route path="/admin/*" element={<Protected admin><AdminPage /></Protected>} />
+    <Route path="*" element={<Navigate to="/faqs" replace />} />
+  </Routes></ToastProvider>;
 }
 
 export default App;
