@@ -55,6 +55,8 @@ const userSchema = new mongoose.Schema(
     answersGiven: { type: Number, default: 0 },
     acceptedAnswers: { type: Number, default: 0 },
     savedFaqs: [{ type: mongoose.Schema.Types.ObjectId, ref: "Faq" }],
+    followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     isBanned: { type: Boolean, default: false },
     isEmailVerified: { type: Boolean, default: false },
     lastActive: Date,
@@ -132,7 +134,7 @@ const notificationSchema = new mongoose.Schema(
   {
     recipient: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     actor: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    type: { type: String, enum: ["answer", "accepted", "mention", "followed-answer"], required: true },
+    type: { type: String, enum: ["answer", "accepted", "mention", "followed-answer", "new-follower"], required: true },
     message: { type: String, required: true, trim: true },
     faq: { type: mongoose.Schema.Types.ObjectId, ref: "Faq" },
     answer: { type: mongoose.Schema.Types.ObjectId, ref: "Answer" },
@@ -773,17 +775,67 @@ app.post("/api/answers/:id/report", authenticate, async (request, response, next
   }
 });
 
-app.get("/api/users/:id", async (request, response, next) => {
+app.get("/api/users/:id", optionalAuth, async (request, response, next) => {
   try {
     if (!objectId(request.params.id)) return fail(response, 404, "User not found");
-    const user = await User.findById(request.params.id).select(userFields).lean();
+    const user = await User.findById(request.params.id).select(`${userFields} followers following`).lean();
     if (!user) return fail(response, 404, "User not found");
     const [faqs, answers] = await Promise.all([
       Faq.find({ author: user._id }).select("title category status createdAt").sort({ createdAt: -1 }).limit(10).lean(),
       Answer.find({ author: user._id }).populate("faq", "title").select("body faq createdAt isAccepted").sort({ createdAt: -1 }).limit(10).lean(),
     ]);
     delete user.savedFaqs;
-    return ok(response, { user, faqs, answers });
+    const followerCount = user.followers?.length ?? 0;
+    const followingCount = user.following?.length ?? 0;
+    const followedByViewer = request.user ? (user.followers ?? []).some((id) => id.equals(request.user.id)) : false;
+    delete user.followers;
+    delete user.following;
+    return ok(response, { user, faqs, answers, followerCount, followingCount, followedByViewer });
+  } catch (error) {
+    next(error);
+  }
+});
+app.post("/api/users/:id/follow", authenticate, async (request, response, next) => {
+  try {
+    if (!objectId(request.params.id)) return fail(response, 404, "User not found");
+    if (request.user._id.equals(request.params.id)) return fail(response, 400, "You cannot follow your own profile");
+    const profile = await User.findById(request.params.id);
+    if (!profile) return fail(response, 404, "User not found");
+    request.user.following ??= [];
+    profile.followers ??= [];
+    const followed = request.user.following.some((id) => id.equals(profile.id));
+    if (followed) {
+      request.user.following.pull(profile.id);
+      profile.followers.pull(request.user.id);
+    } else {
+      request.user.following.addToSet(profile.id);
+      profile.followers.addToSet(request.user.id);
+    }
+    await Promise.all([request.user.save(), profile.save()]);
+    if (!followed) {
+      await notify({
+        recipient: profile.id,
+        actor: request.user.id,
+        type: "new-follower",
+        message: `${request.user.name} started following you`,
+      });
+    }
+    return ok(response, {
+      followed: !followed,
+      followerCount: profile.followers.length,
+      followingCount: profile.following?.length ?? 0,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+app.get("/api/users/:id/follows", authenticate, async (request, response, next) => {
+  try {
+    if (!request.user._id.equals(request.params.id)) return fail(response, 403, "Follow lists are private");
+    const user = await User.findById(request.user.id)
+      .populate("followers", "name profilePicture reputation")
+      .populate("following", "name profilePicture reputation");
+    return ok(response, { followers: user.followers ?? [], following: user.following ?? [] });
   } catch (error) {
     next(error);
   }
@@ -964,6 +1016,8 @@ async function migrateLegacyFaqs() {
     mongoose.connection.collection("answers").updateMany({ downvotedBy: { $exists: false } }, { $set: { downvotedBy: [] } }),
     mongoose.connection.collection("answers").updateMany({ comments: { $exists: false } }, { $set: { comments: [] } }),
     mongoose.connection.collection("users").updateMany({ savedFaqs: { $exists: false } }, { $set: { savedFaqs: [] } }),
+    mongoose.connection.collection("users").updateMany({ followers: { $exists: false } }, { $set: { followers: [] } }),
+    mongoose.connection.collection("users").updateMany({ following: { $exists: false } }, { $set: { following: [] } }),
   ]);
   if (legacyFaqs.length) console.log(`Migrated ${legacyFaqs.length} legacy FAQ record(s)`);
 }

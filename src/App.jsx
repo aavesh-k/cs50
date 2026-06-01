@@ -31,6 +31,15 @@ function relativeTime(value) {
 function authorName(item) {
   return item.isAnonymous ? "Anonymous" : item.author?.name ?? "Anonymous";
 }
+function profilePath(item) {
+  return !item.isAnonymous && item.author?._id ? `/profile/${item.author._id}` : null;
+}
+function AuthorIdentity({ item, meta, color = "blue" }) {
+  const name = authorName(item);
+  const content = <><span className={`avatar avatar-${color}`}>{initials(name)}</span><span><b>{name}</b><small>{meta}</small></span></>;
+  const path = profilePath(item);
+  return path ? <Link className="author profile-link" to={path}>{content}</Link> : <div className="author">{content}</div>;
+}
 function useToast() {
   return useContext(ToastContext);
 }
@@ -101,8 +110,13 @@ function NotificationBell() {
   useEffect(() => {
     load().catch(() => {});
     if (!auth.user) return undefined;
-    const interval = window.setInterval(() => load().catch(() => {}), 30000);
-    return () => window.clearInterval(interval);
+    const refresh = () => load().catch(() => {});
+    const interval = window.setInterval(refresh, 5000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+    };
   }, [auth.user?._id]);
   async function markAllRead() {
     await patch("/notifications/read-all");
@@ -403,7 +417,7 @@ function FaqCard({ faq, onChange }) {
       <div className="faq-topline"><span className="topic-badge violet">{faq.category}</span>{faq.company && <span className="mini-chip">{faq.company}</span>}{faq.role && <span className="mini-chip">{faq.role}</span>}{faq.isTrending && <span className="trending"><TrendingUp size={12} /> Trending</span>}<span className={`status ${faq.status}`}><i />{faq.status}</span></div>
       <Link to={`/faqs/${faq._id}`}><h3>{faq.title}</h3></Link><p>{faq.description}</p>
       <div className="tag-row">{faq.tags?.map((tag) => <span key={tag}>#{tag}</span>)}</div>
-      <div className="faq-footer"><div className="author"><span className="avatar avatar-blue">{initials(name)}</span><span><b>{name}</b><small>asked {relativeTime(faq.createdAt)}</small></span></div>
+      <div className="faq-footer"><AuthorIdentity item={faq} meta={`asked ${relativeTime(faq.createdAt)}`} />
         <div className="faq-metrics"><button className="metric-button vote" onClick={upvote}><ArrowUp size={14} /> {faq.upvotes}</button><span><MessageCircle size={14} /> {faq.answerCount}</span><span><Eye size={14} /> {faq.viewCount}</span></div>
       </div>
     </div></article>
@@ -478,7 +492,6 @@ function FaqDetailPage() {
   const [busy, setBusy] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [report, setReport] = useState(null);
-  const [progress, setProgress] = useState(0);
   const viewed = useRef(false);
   async function loadFaq() {
     const data = await api(`/faqs/${id}`);
@@ -493,19 +506,6 @@ function FaqDetailPage() {
     if (viewed.current) return;
     viewed.current = true;
     patch(`/faqs/${id}/view`).then(({ viewCount }) => setFaq((current) => current ? { ...current, viewCount } : current)).catch(() => {});
-  }, [id]);
-  useEffect(() => {
-    function updateProgress() {
-      const available = document.documentElement.scrollHeight - window.innerHeight;
-      setProgress(available > 0 ? Math.min(100, Math.max(0, (window.scrollY / available) * 100)) : 0);
-    }
-    updateProgress();
-    window.addEventListener("scroll", updateProgress, { passive: true });
-    window.addEventListener("resize", updateProgress);
-    return () => {
-      window.removeEventListener("scroll", updateProgress);
-      window.removeEventListener("resize", updateProgress);
-    };
   }, [id]);
   function requireLogin() {
     if (!auth.user) {
@@ -556,11 +556,11 @@ function FaqDetailPage() {
   if (!faq) return <Shell><PageLoader /></Shell>;
   const name = authorName(faq);
   const ownsFaq = auth.user?._id === faq.author?._id;
-  return <Shell><div className="reading-progress"><i style={{ width: `${progress}%` }} /></div><main className="detail-page">
+  return <Shell><main className="detail-page">
     <section className="surface detail-header">
       <div className="faq-topline"><span className="topic-badge violet">{faq.category}</span>{faq.company && <span className="mini-chip">{faq.company}</span>}{faq.role && <span className="mini-chip">{faq.role}</span>}<span className={`status ${faq.status}`}><i />{faq.status}</span></div>
       <h1>{faq.title}</h1><p className="detail-copy">{faq.description}</p><div className="tag-row">{faq.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>
-      <div className="detail-meta"><div className="author"><span className="avatar avatar-blue">{initials(name)}</span><span><b>{name}</b><small>{faq.author?.reputation ?? 0} reputation - asked {relativeTime(faq.createdAt)}</small></span></div><span><Eye size={15} /> {faq.viewCount} views</span></div>
+      <div className="detail-meta"><AuthorIdentity item={faq} meta={`${faq.author?.reputation ?? 0} reputation - asked ${relativeTime(faq.createdAt)}`} /><span><Eye size={15} /> {faq.viewCount} views</span></div>
       <div className="detail-actions"><button className={faq.upvoted ? "active" : ""} onClick={() => toggleFaqAction("upvote")}><ArrowUp size={16} /> {faq.upvotes} Upvote</button><button className={faq.saved ? "active" : ""} onClick={() => toggleFaqAction("save")}><Bookmark size={16} /> {faq.saved ? "Saved" : "Save"}</button><button className={faq.followed ? "active" : ""} onClick={toggleFollow}>{faq.followed ? <UserCheck size={16} /> : <UserPlus size={16} />} {faq.followed ? "Following" : "Follow"}</button><button onClick={share}><Link2 size={16} /> Share</button><button onClick={() => requireLogin() && setReport({ type: "faq", id })}><CircleAlert size={16} /> Report</button></div>
     </section>
     <section className="surface summary-box"><span className="section-label"><Bot size={15} /> AI summary</span>{faq.aiSummary ? <><p>{faq.aiSummary}</p><small>Generated from community answers - updated {relativeTime(faq.aiSummaryUpdatedAt)}</small></> : <p>{faq.answerCount >= 3 ? "Turn the discussion into a quick practical summary." : "A summary can be generated once this question has at least 3 answers."}</p>}{faq.answerCount >= 3 && <button className="outline-button" disabled={summaryBusy} onClick={generateSummary}>{summaryBusy ? "Generating..." : faq.aiSummary ? "Regenerate" : "Generate AI summary"}</button>}</section>
@@ -600,7 +600,7 @@ function AnswerCard({ answer, ownsFaq, onReload, onReport }) {
       onReload();
     } catch (error) { toast(error.message); } finally { setCommentBusy(false); }
   }
-  return <article className={`surface answer-card ${answer.isAccepted ? "accepted" : ""}`}>{answer.isAccepted && <div className="best-answer"><CheckCircle2 size={15} /> Best Answer</div>}<div className="answer-card-header"><div className="author"><span className="avatar avatar-green">{initials(name)}</span><span><b>{name}</b><small>{answer.author?.reputation ?? 0} reputation - answered {relativeTime(answer.createdAt)}</small></span></div><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? <CheckCircle2 size={13} /> : <CircleAlert size={13} />}{answer.isVerified ? "Verified" : "Unverified"}</span></div><p>{answer.body}</p><div className="answer-actions"><button className={upvoted ? "active" : ""} onClick={() => vote("upvote")}><ArrowUp size={15} /> {answer.upvotes}</button><button className={downvoted ? "active" : ""} onClick={() => vote("downvote")}><ArrowDown size={15} /> {answer.downvotes}</button>{ownsFaq && <button disabled={!answer.isVerified} title={answer.isVerified ? "Mark as Best Answer" : "Admin verification required"} onClick={accept}><Check size={15} /> Accept</button>}<button onClick={onReport}><CircleAlert size={15} /> Report</button></div><div className="comment-thread">{answer.comments?.map((item) => <div className="comment" key={item._id}><b>{item.author?.name ?? "Student"}</b><span>{item.body}</span><small>{relativeTime(item.createdAt)}</small></div>)}<form className="comment-form" onSubmit={postComment}><input required minLength="2" maxLength="500" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment or mention @FirstName..." /><button disabled={commentBusy || !comment.trim()}><Send size={14} /></button></form></div></article>;
+  return <article className={`surface answer-card ${answer.isAccepted ? "accepted" : ""}`}>{answer.isAccepted && <div className="best-answer"><CheckCircle2 size={15} /> Best Answer</div>}<div className="answer-card-header"><AuthorIdentity item={answer} color="green" meta={`${answer.author?.reputation ?? 0} reputation - answered ${relativeTime(answer.createdAt)}`} /><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? <CheckCircle2 size={13} /> : <CircleAlert size={13} />}{answer.isVerified ? "Verified" : "Unverified"}</span></div><p>{answer.body}</p><div className="answer-actions"><button className={upvoted ? "active" : ""} onClick={() => vote("upvote")}><ArrowUp size={15} /> {answer.upvotes}</button><button className={downvoted ? "active" : ""} onClick={() => vote("downvote")}><ArrowDown size={15} /> {answer.downvotes}</button>{ownsFaq && <button disabled={!answer.isVerified} title={answer.isVerified ? "Mark as Best Answer" : "Admin verification required"} onClick={accept}><Check size={15} /> Accept</button>}<button onClick={onReport}><CircleAlert size={15} /> Report</button></div><div className="comment-thread">{answer.comments?.map((item) => <div className="comment" key={item._id}>{item.author?._id ? <Link to={`/profile/${item.author._id}`}><b>{item.author.name}</b></Link> : <b>Student</b>}<span>{item.body}</span><small>{relativeTime(item.createdAt)}</small></div>)}<form className="comment-form" onSubmit={postComment}><input required minLength="2" maxLength="500" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment or mention @FirstName..." /><button disabled={commentBusy || !comment.trim()}><Send size={14} /></button></form></div></article>;
 }
 
 function ReportModal({ report, onClose }) {
@@ -617,10 +617,13 @@ function ReportModal({ report, onClose }) {
 
 function ProfilePage() {
   const auth = useAuth();
+  const navigate = useNavigate();
   const { id } = useParams();
   const profileId = id ?? auth.user?._id;
   const [data, setData] = useState(null);
   const [saved, setSaved] = useState([]);
+  const [network, setNetwork] = useState({ followers: [], following: [] });
+  const [networkTab, setNetworkTab] = useState(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const toast = useToast();
@@ -629,7 +632,11 @@ function ProfilePage() {
     const profile = await api(`/users/${profileId}`);
     setData(profile);
     setForm(profile.user);
-    if (own) setSaved((await api(`/users/${profileId}/saved-faqs`)).faqs);
+    if (own) {
+      const [savedFaqs, follows] = await Promise.all([api(`/users/${profileId}/saved-faqs`), api(`/users/${profileId}/follows`)]);
+      setSaved(savedFaqs.faqs);
+      setNetwork(follows);
+    }
   }
   useEffect(() => { load().catch((error) => toast(error.message)); }, [profileId]);
   async function save(event) {
@@ -642,22 +649,36 @@ function ProfilePage() {
       toast("Profile updated");
     } catch (error) { toast(error.message); }
   }
+  async function toggleProfileFollow() {
+    if (!auth.user) return navigate("/login", { state: { from: `/profile/${profileId}`, message: "Please login to continue" } });
+    try {
+      const result = await post(`/users/${profileId}/follow`, {});
+      setData((current) => ({ ...current, followedByViewer: result.followed, followerCount: result.followerCount }));
+      toast(result.followed ? "Following this student" : "Student unfollowed");
+    } catch (error) { toast(error.message); }
+  }
   if (!data) return <Shell><PageLoader /></Shell>;
-  const { user, faqs, answers } = data;
-  return <Shell><main className="profile-page"><section className="surface profile-header"><span className="avatar avatar-blue large">{initials(user.name)}</span><div><h1>{user.name}</h1><p>{user.branch || "Branch not set"} {user.semester && `- Semester ${user.semester}`}</p><b>{user.reputation} reputation</b></div>{own && <button className="outline-button" onClick={() => setEditing(!editing)}><Pencil size={15} /> Edit profile</button>}</section>
-    <section className="stats-grid"><Stat label="Questions asked" value={user.questionsAsked} /><Stat label="Answers given" value={user.answersGiven} /><Stat label="Accepted answers" value={user.acceptedAnswers} /><Stat label="Reputation" value={user.reputation} /></section>
+  const { user, faqs, answers, followerCount, followingCount, followedByViewer } = data;
+  return <Shell><main className="profile-page"><section className="surface profile-header"><span className="avatar avatar-blue large">{initials(user.name)}</span><div><h1>{user.name}</h1><p>{user.branch || "Branch not set"} {user.semester && `- Semester ${user.semester}`}</p><b>{user.reputation} reputation</b></div>{own ? <button className="outline-button" onClick={() => setEditing(!editing)}><Pencil size={15} /> Edit profile</button> : <button className={`outline-button ${followedByViewer ? "active" : ""}`} onClick={toggleProfileFollow}>{followedByViewer ? <UserCheck size={15} /> : <UserPlus size={15} />}{followedByViewer ? "Following" : "Follow student"}</button>}</section>
+    <section className="stats-grid"><Stat label="Questions asked" value={user.questionsAsked} /><Stat label="Answers given" value={user.answersGiven} /><Stat label="Accepted answers" value={user.acceptedAnswers} /><Stat label="Reputation" value={user.reputation} /><Stat label="Followers" value={followerCount} active={networkTab === "followers"} onClick={own ? () => setNetworkTab(networkTab === "followers" ? null : "followers") : undefined} /><Stat label="Following" value={followingCount} active={networkTab === "following"} onClick={own ? () => setNetworkTab(networkTab === "following" ? null : "following") : undefined} /></section>
     {editing && <form className="surface form-grid profile-edit" onSubmit={save}><h2>Edit profile</h2><Field label="Name"><input value={form.name ?? ""} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><div className="form-row"><Field label="Branch"><select value={form.branch ?? ""} onChange={(event) => setForm({ ...form, branch: event.target.value })}><option value="">Select</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></Field><Field label="Semester"><select value={form.semester ?? ""} onChange={(event) => setForm({ ...form, semester: event.target.value })}><option value="">Select</option>{[1, 2, 3, 4, 5, 6, 7, 8].map((semester) => <option key={semester}>{semester}</option>)}</select></Field></div><Field label={`Bio (${form.bio?.length ?? 0}/200)`}><textarea maxLength="200" value={form.bio ?? ""} onChange={(event) => setForm({ ...form, bio: event.target.value })} /></Field><Field label="Profile picture URL"><input value={form.profilePicture ?? ""} onChange={(event) => setForm({ ...form, profilePicture: event.target.value })} /></Field><button className="primary-button">Save profile</button></form>}
     <ProfileList title="Recent questions" empty="No questions posted yet.">{faqs.map((faq) => <Link key={faq._id} to={`/faqs/${faq._id}`}>{faq.title}<small>{faq.category} - {relativeTime(faq.createdAt)}</small></Link>)}</ProfileList>
     <ProfileList title="Recent answers" empty="No answers posted yet.">{answers.map((answer) => <Link key={answer._id} to={`/faqs/${answer.faq?._id}`}>{answer.faq?.title}<small>{answer.body.slice(0, 100)}</small></Link>)}</ProfileList>
     {own && <ProfileList title="Saved FAQs" empty="No bookmarks yet.">{saved.map((faq) => <Link key={faq._id} to={`/faqs/${faq._id}`}>{faq.title}<small>{faq.category}</small></Link>)}</ProfileList>}
+    {own && networkTab && <section className="surface network-panel"><PrivateNetworkList title={networkTab === "followers" ? "Your followers" : "You follow"} users={network[networkTab]} /></section>}
   </main></Shell>;
+}
+
+function PrivateNetworkList({ title, users }) {
+  return <div><h2>{title}</h2>{users.length ? users.map((user) => <Link className="network-user" key={user._id} to={`/profile/${user._id}`}><span className="avatar avatar-blue">{initials(user.name)}</span><span><b>{user.name}</b><small>{user.reputation} reputation</small></span></Link>) : <p>No students yet.</p>}</div>;
 }
 
 function ProfileList({ title, empty, children }) {
   return <section className="surface profile-list"><h2>{title}</h2>{children.length ? children : <p>{empty}</p>}</section>;
 }
-function Stat({ label, value }) {
-  return <div className="surface stat-card"><b>{value}</b><span>{label}</span></div>;
+function Stat({ label, value, onClick, active = false }) {
+  const content = <><b>{value}</b><span>{label}</span></>;
+  return onClick ? <button className={`surface stat-card clickable ${active ? "active" : ""}`} onClick={onClick}>{content}</button> : <div className="surface stat-card">{content}</div>;
 }
 
 function AdminPage() {
@@ -697,8 +718,8 @@ function AdminPage() {
     {(tab === "users" || tab === "faqs") && <div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}...`} /></div>}
     {tab === "overview" && <div className="stats-grid">{Object.entries({ "Total users": stats.users, "Total FAQs": stats.faqs, "Total answers": stats.answers, "Open FAQs": stats.openFaqs, "Answered FAQs": stats.answeredFaqs, "Reports pending": stats.reportsPending }).map(([label, value]) => <Stat key={label} label={label} value={value} />)}</div>}
     {tab === "users" && <AdminTable headings={["Name", "Email", "Branch", "Rep", "Questions", "Answers", "Action"]}>{visibleUsers.map((user) => <tr key={user._id}><td><Link to={`/profile/${user._id}`}>{user.name}</Link></td><td>{user.email}</td><td>{user.branch || "-"}</td><td>{user.reputation}</td><td>{user.questionsAsked}</td><td>{user.answersGiven}</td><td><button className="table-button" onClick={() => ban(user._id)}>{user.isBanned ? "Unban" : "Ban"}</button></td></tr>)}</AdminTable>}
-    {tab === "faqs" && <AdminTable headings={["Title", "Author", "Category", "Status", "Answers", "Action"]}>{visibleFaqs.map((faq) => <tr key={faq._id}><td><Link to={`/faqs/${faq._id}`}>{faq.title}</Link></td><td>{authorName(faq)}</td><td>{faq.category}</td><td>{faq.status}</td><td>{faq.answerCount}</td><td><button className="table-button danger" onClick={() => deleteFaq(faq._id)}><Trash2 size={14} /> Delete</button></td></tr>)}</AdminTable>}
-    {tab === "answers" && <AdminTable headings={["Answer", "FAQ", "Author", "Status", "Action"]}>{answers.map((answer) => <tr key={answer._id}><td>{answer.body.slice(0, 90)}</td><td><Link to={`/faqs/${answer.faq?._id}`}>{answer.faq?.title}</Link></td><td>{authorName(answer)}</td><td><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? "Verified" : "Unverified"}</span></td><td><button className="table-button" onClick={() => verifyAnswer(answer._id)}>{answer.isVerified ? "Mark unverified" : "Verify answer"}</button></td></tr>)}</AdminTable>}
+    {tab === "faqs" && <AdminTable headings={["Title", "Author", "Category", "Status", "Answers", "Action"]}>{visibleFaqs.map((faq) => <tr key={faq._id}><td><Link to={`/faqs/${faq._id}`}>{faq.title}</Link></td><td>{profilePath(faq) ? <Link to={profilePath(faq)}>{authorName(faq)}</Link> : authorName(faq)}</td><td>{faq.category}</td><td>{faq.status}</td><td>{faq.answerCount}</td><td><button className="table-button danger" onClick={() => deleteFaq(faq._id)}><Trash2 size={14} /> Delete</button></td></tr>)}</AdminTable>}
+    {tab === "answers" && <AdminTable headings={["Answer", "FAQ", "Author", "Status", "Action"]}>{answers.map((answer) => <tr key={answer._id}><td>{answer.body.slice(0, 90)}</td><td><Link to={`/faqs/${answer.faq?._id}`}>{answer.faq?.title}</Link></td><td>{profilePath(answer) ? <Link to={profilePath(answer)}>{authorName(answer)}</Link> : authorName(answer)}</td><td><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? "Verified" : "Unverified"}</span></td><td><button className="table-button" onClick={() => verifyAnswer(answer._id)}>{answer.isVerified ? "Mark unverified" : "Verify answer"}</button></td></tr>)}</AdminTable>}
     {tab === "reports" && <AdminTable headings={["Type", "Reporter", "Reason", "Content", "Date", "Status", "Action"]}>{reports.map((report) => <tr key={report._id}><td>{report.contentType}</td><td>{report.reporter?.name}</td><td>{report.reason}</td><td>{report.content?.title ?? report.content?.body?.slice(0, 70) ?? "Content removed"}</td><td>{new Date(report.createdAt).toLocaleDateString()}</td><td>{report.resolved ? "Resolved" : "Pending"}</td><td className="table-actions">{!report.resolved && <button className="table-button" onClick={() => resolve(report._id)}>Dismiss</button>}{report.content && <button className="table-button danger" onClick={() => deleteReportedContent(report)}>Delete content</button>}</td></tr>)}</AdminTable>}
   </section></main></Shell>;
 }
