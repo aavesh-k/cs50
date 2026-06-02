@@ -49,7 +49,6 @@ const userSchema = new mongoose.Schema(
     semester: { type: Number, min: 1, max: 8 },
     rollNumber: { type: String, trim: true },
     bio: { type: String, trim: true, maxlength: 200 },
-    profilePicture: String,
     reputation: { type: Number, default: 0 },
     questionsAsked: { type: Number, default: 0 },
     answersGiven: { type: Number, default: 0 },
@@ -149,8 +148,8 @@ const Faq = mongoose.model("Faq", faqSchema);
 const Answer = mongoose.model("Answer", answerSchema);
 const Report = mongoose.model("Report", reportSchema);
 const Notification = mongoose.model("Notification", notificationSchema);
-const userFields = "name email role branch semester rollNumber bio profilePicture reputation questionsAsked answersGiven acceptedAnswers savedFaqs isBanned createdAt";
-const authorFields = "name profilePicture reputation";
+const userFields = "name email role branch semester rollNumber bio reputation questionsAsked answersGiven acceptedAnswers savedFaqs isBanned createdAt";
+const authorFields = "name reputation";
 
 function ok(response, data, status = 200) {
   return response.status(status).json({ success: true, data });
@@ -256,6 +255,29 @@ async function generateAiText(prompt, instructions) {
   const result = await aiResponse.json();
   if (!aiResponse.ok) throw new Error("AI_REQUEST_FAILED");
   return result.output_text ?? result.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text;
+}
+async function refreshFaqSummary(faqId) {
+  const faq = await Faq.findById(faqId);
+  if (!faq) throw new Error("FAQ_NOT_FOUND");
+  const answers = await Answer.find({ faq: faq.id, isVerified: true })
+    .sort({ isAccepted: -1, upvotes: -1, createdAt: -1 })
+    .select("body")
+    .lean();
+  if (!answers.length) {
+    faq.aiSummary = undefined;
+    faq.aiSummaryUpdatedAt = undefined;
+    await faq.save();
+    return { summary: null, updatedAt: null, verifiedAnswerCount: 0 };
+  }
+  const summary = await generateAiText(
+    `Question: ${faq.title}\n\nVerified answers:\n${answers.map((answer, index) => `${index + 1}. ${answer.body}`).join("\n")}`,
+    "Summarize the verified student community answers into a concise, practical response. Do not invent facts. Use plain text and at most 180 words.",
+  );
+  if (!summary) throw new Error("AI_EMPTY_RESPONSE");
+  faq.aiSummary = summary;
+  faq.aiSummaryUpdatedAt = new Date();
+  await faq.save();
+  return { summary, updatedAt: faq.aiSummaryUpdatedAt, verifiedAnswerCount: answers.length };
 }
 const chatStopWords = new Set([
   "about", "after", "also", "and", "are", "can", "could", "does", "for", "from", "have",
@@ -589,22 +611,13 @@ app.post("/api/faqs/:id/report", authenticate, async (request, response, next) =
 });
 app.post("/api/faqs/:id/generate-summary", authenticate, async (request, response, next) => {
   try {
-    const faq = await Faq.findById(request.params.id);
-    if (!faq) return fail(response, 404, "FAQ not found");
-    const answers = await Answer.find({ faq: faq.id }).sort({ isAccepted: -1, upvotes: -1 }).select("body").lean();
-    if (answers.length < 3) return fail(response, 400, "At least 3 answers are needed to generate a summary");
-    const summary = await generateAiText(
-      `Question: ${faq.title}\n\nAnswers:\n${answers.map((answer, index) => `${index + 1}. ${answer.body}`).join("\n")}`,
-      "Summarize the student community answers into a concise, practical response. Do not invent facts. Use plain text and at most 180 words.",
-    );
-    if (!summary) return fail(response, 502, "The AI summary service returned an empty response");
-    faq.aiSummary = summary;
-    faq.aiSummaryUpdatedAt = new Date();
-    await faq.save();
-    return ok(response, { summary, updatedAt: faq.aiSummaryUpdatedAt, answerCount: answers.length });
+    const summary = await refreshFaqSummary(request.params.id);
+    if (!summary.verifiedAnswerCount) return fail(response, 400, "At least one verified answer is needed to generate a summary");
+    return ok(response, summary);
   } catch (error) {
+    if (error.message === "FAQ_NOT_FOUND") return fail(response, 404, "FAQ not found");
     if (error.message === "AI_NOT_CONFIGURED") return fail(response, 503, "AI summaries are not configured yet");
-    if (error.message === "AI_REQUEST_FAILED") return fail(response, 502, "The AI summary service could not complete the request");
+    if (["AI_REQUEST_FAILED", "AI_EMPTY_RESPONSE"].includes(error.message)) return fail(response, 502, "The AI summary service could not complete the request");
     next(error);
   }
 });
@@ -623,6 +636,7 @@ app.post("/api/faqs/:faqId/answers", authenticate, async (request, response, nex
   try {
     const faq = await Faq.findById(request.params.faqId);
     if (!faq) return fail(response, 404, "FAQ not found");
+    if (faq.author.equals(request.user.id)) return fail(response, 403, "You cannot answer your own FAQ");
     const answer = await Answer.create({ faq: faq.id, author: request.user.id, body: request.body.body, isAnonymous: Boolean(request.body.isAnonymous) });
     faq.answerCount += 1;
     if (faq.status === "open") faq.status = "answered";
@@ -718,6 +732,9 @@ app.post("/api/answers/:id/comments", authenticate, async (request, response, ne
     if (body.length < 2 || body.length > 500) return fail(response, 400, "Comment must be between 2 and 500 characters");
     const answer = await Answer.findById(request.params.id);
     if (!answer) return fail(response, 404, "Answer not found");
+    const faq = await Faq.findById(answer.faq).select("author").lean();
+    if (!faq) return fail(response, 404, "FAQ not found");
+    if (faq.author.equals(request.user.id)) return fail(response, 403, "You cannot comment on your own FAQ");
     answer.comments.push({ author: request.user.id, body });
     await answer.save();
     await notifyMentions(body, { actor: request.user.id, faq: answer.faq, answer: answer.id });
@@ -833,8 +850,8 @@ app.get("/api/users/:id/follows", authenticate, async (request, response, next) 
   try {
     if (!request.user._id.equals(request.params.id)) return fail(response, 403, "Follow lists are private");
     const user = await User.findById(request.user.id)
-      .populate("followers", "name profilePicture reputation")
-      .populate("following", "name profilePicture reputation");
+      .populate("followers", "name reputation")
+      .populate("following", "name reputation");
     return ok(response, { followers: user.followers ?? [], following: user.following ?? [] });
   } catch (error) {
     next(error);
@@ -843,7 +860,7 @@ app.get("/api/users/:id/follows", authenticate, async (request, response, next) 
 app.patch("/api/users/:id", authenticate, async (request, response, next) => {
   try {
     if (!request.user._id.equals(request.params.id)) return fail(response, 403, "You can only edit your own profile");
-    const allowed = ["name", "branch", "semester", "bio", "profilePicture"];
+    const allowed = ["name", "branch", "semester", "bio"];
     const changes = Object.fromEntries(allowed.filter((field) => request.body[field] !== undefined).map((field) => [field, request.body[field]]));
     const user = await User.findByIdAndUpdate(request.user.id, changes, { new: true, runValidators: true }).select(userFields);
     return ok(response, { user });
@@ -919,7 +936,14 @@ app.patch("/api/admin/answers/:id/verify", authenticate, adminOnly, async (reque
     if (!answer) return fail(response, 404, "Answer not found");
     answer.isVerified = !answer.isVerified;
     await answer.save();
-    return ok(response, { answer });
+    let summaryRefresh;
+    try {
+      summaryRefresh = { updated: true, ...await refreshFaqSummary(answer.faq) };
+    } catch (error) {
+      console.error(`Automatic FAQ summary refresh failed: ${error.message}`);
+      summaryRefresh = { updated: false };
+    }
+    return ok(response, { answer, summaryRefresh });
   } catch (error) {
     next(error);
   }
@@ -950,6 +974,13 @@ app.delete("/api/answers/:id", authenticate, adminOnly, async (request, response
       faq.answerCount = Math.max(0, faq.answerCount - 1);
       if (faq.answerCount === 0) faq.status = "open";
       await faq.save();
+      if (answer.isVerified) {
+        try {
+          await refreshFaqSummary(faq.id);
+        } catch (error) {
+          console.error(`Automatic FAQ summary refresh failed after answer deletion: ${error.message}`);
+        }
+      }
     }
     return ok(response, { deleted: true });
   } catch (error) {

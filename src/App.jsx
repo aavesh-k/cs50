@@ -5,7 +5,7 @@ import {
   LogIn, LogOut, Menu, MessageCircle, Moon, Pencil, Plus, Search, Send, Shield, Sparkles,
   Sun, Tag, Trash2, TrendingUp, Trophy, User, UserCheck, UserPlus, Users, X,
 } from "lucide-react";
-import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { api, patch, post, remove } from "./api";
 
@@ -96,6 +96,25 @@ function ThemeToggle() {
   return <button className="icon-btn" title={dark ? "Use light mode" : "Use dark mode"} onClick={() => setDark(!dark)}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button>;
 }
 
+function Brand({ compact = false }) {
+  return <Link className={`brand ${compact ? "brand-compact" : ""}`} to="/faqs"><span className="brand-mark"><MessageCircle size={compact ? 17 : 19} /></span><span className="brand-name">Crowd<span>FAQ</span></span></Link>;
+}
+
+function HeaderSearch() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get("search") ?? "");
+  useEffect(() => {
+    if (location.pathname === "/faqs") setSearch(new URLSearchParams(location.search).get("search") ?? "");
+  }, [location.pathname, location.search]);
+  function submit(event) {
+    event.preventDefault();
+    const value = search.trim();
+    navigate(value ? `/faqs?${queryString({ search: value })}` : "/faqs");
+  }
+  return <form className="nav-search" role="search" onSubmit={submit}><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search FAQs..." aria-label="Search FAQs" /><button aria-label="Search"><Search size={15} /></button></form>;
+}
+
 function NotificationBell() {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
@@ -138,12 +157,13 @@ function Navbar() {
   return (
     <header className="navbar">
       <div className="nav-inner">
-        <Link className="brand" to="/faqs"><span className="brand-mark"><MessageCircle size={19} /></span><span>Crowd<span>FAQ</span></span></Link>
+        <Brand />
         <nav className="main-nav">
           <Link to="/faqs"><House size={17} /> FAQs</Link>
           {auth.user && <Link to="/profile"><User size={17} /> Profile</Link>}
           {auth.isAdmin && <Link to="/admin"><Shield size={17} /> Admin</Link>}
         </nav>
+        <HeaderSearch />
         <div className="nav-actions">
           <ThemeToggle />
           <Link className="ask-button" to="/faqs/ask"><Plus size={17} /> Ask a Question</Link>
@@ -164,7 +184,7 @@ function Navbar() {
 }
 
 function Shell({ children }) {
-  return <div className="app-shell"><Navbar />{children}<footer><Link className="brand" to="/faqs"><span className="brand-mark"><MessageCircle size={17} /></span>Crowd<span>FAQ</span></Link><p>Built for ambitious interns, powered by shared experiences.</p><span>&copy; 2026 CrowdFAQ</span></footer><Chatbot /></div>;
+  return <div className="app-shell"><Navbar />{children}<footer><Brand compact /><p>Built for ambitious interns, powered by shared experiences.</p><span>&copy; 2026 CrowdFAQ</span></footer><Chatbot /></div>;
 }
 
 function Chatbot() {
@@ -251,7 +271,7 @@ function AuthPage({ register = false }) {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <Link className="brand" to="/faqs"><span className="brand-mark"><MessageCircle size={19} /></span><span>Crowd<span>FAQ</span></span></Link>
+        <Brand />
         <span className="section-label"><Sparkles size={14} /> Student community</span>
         <h1>{register ? "Create your account" : "Welcome back"}</h1>
         <p>{register ? "Join students sharing practical internship knowledge." : "Login to ask, answer, and save useful FAQs."}</p>
@@ -315,12 +335,13 @@ function Field({ label, error, children }) {
 }
 
 function FeedPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [faqs, setFaqs] = useState([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({ categories: [], company: "", role: "", status: "all", sort: "latest" });
   const latestRequest = useRef(0);
@@ -328,6 +349,7 @@ function FeedPage() {
   const debouncedCompany = useDebounced(filters.company, 400);
   const debouncedRole = useDebounced(filters.role, 400);
   const toast = useToast();
+  const urlSearch = searchParams.get("search") ?? "";
   const filterKey = JSON.stringify({ search: debouncedSearch, company: debouncedCompany, role: debouncedRole, categories: filters.categories, status: filters.status, sort: filters.sort });
   async function fetchFaqs(nextPage = 1, append = false) {
     const requestId = ++latestRequest.current;
@@ -348,22 +370,21 @@ function FeedPage() {
     }
   }
   useEffect(() => { fetchFaqs(); }, [filterKey]);
+  useEffect(() => {
+    setSearch(urlSearch);
+    setFilters((current) => ({ ...current, categories: [], company: "", role: "", status: "all" }));
+  }, [urlSearch]);
   function toggleCategory(category) {
     setFilters((current) => ({ ...current, categories: current.categories.includes(category) ? current.categories.filter((item) => item !== category) : [...current.categories, category] }));
   }
   function clearFilters() {
     setSearch("");
+    setSearchParams({});
     setFilters({ categories: [], company: "", role: "", status: "all", sort: "latest" });
-  }
-  function updateSearch(event) {
-    setSearch(event.target.value);
-    setFilters((current) => ({ ...current, categories: [], company: "", role: "", status: "all" }));
   }
   return (
     <Shell>
-      <section className="feed-hero"><div><span className="section-label"><Sparkles size={14} /> Built by interns, for interns</span><h1>Find answers. <span>Share experience.</span></h1><p>Real internship questions and practical answers from students who have been there.</p></div>
-        <div className="hero-search"><Search size={20} /><input value={search} onChange={updateSearch} placeholder="Search title, description, or tags..." /></div>
-      </section>
+      <section className="feed-hero"><div><span className="section-label"><Sparkles size={14} /> Built by interns, for interns</span><h1>Find answers. <span>Share experience.</span></h1><p>Real internship questions and practical answers from students who have been there.</p></div></section>
       <main className="page-content">
         <div className="section-heading"><div><span className="section-label"><MessageCircle size={14} /> Community knowledge</span><h2>Internship FAQs</h2></div><button className="filter-mobile" onClick={() => setFiltersOpen(!filtersOpen)}><Filter size={16} /> Filters</button></div>
         <div className="feed-layout">
@@ -415,7 +436,7 @@ function FaqCard({ faq, onChange }) {
   return (
     <article className="faq-card"><div className="faq-content">
       <div className="faq-topline"><span className="topic-badge violet">{faq.category}</span>{faq.company && <span className="mini-chip">{faq.company}</span>}{faq.role && <span className="mini-chip">{faq.role}</span>}{faq.isTrending && <span className="trending"><TrendingUp size={12} /> Trending</span>}<span className={`status ${faq.status}`}><i />{faq.status}</span></div>
-      <Link to={`/faqs/${faq._id}`}><h3>{faq.title}</h3></Link><p>{faq.description}</p>
+      <Link to={`/faqs/${faq._id}`}><h3>{faq.title}</h3></Link><p>{faq.description}</p><Link className="faq-read-more" to={`/faqs/${faq._id}`}>View full FAQ <ArrowRight size={13} /></Link>
       <div className="tag-row">{faq.tags?.map((tag) => <span key={tag}>#{tag}</span>)}</div>
       <div className="faq-footer"><AuthorIdentity item={faq} meta={`asked ${relativeTime(faq.createdAt)}`} />
         <div className="faq-metrics"><button className="metric-button vote" onClick={upvote}><ArrowUp size={14} /> {faq.upvotes}</button><span><MessageCircle size={14} /> {faq.answerCount}</span><span><Eye size={14} /> {faq.viewCount}</span></div>
@@ -490,7 +511,6 @@ function FaqDetailPage() {
   const [answerBody, setAnswerBody] = useState("");
   const [anonymous, setAnonymous] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [summaryBusy, setSummaryBusy] = useState(false);
   const [report, setReport] = useState(null);
   const viewed = useRef(false);
   async function loadFaq() {
@@ -532,6 +552,7 @@ function FaqDetailPage() {
   }
   async function submitAnswer(event) {
     event.preventDefault();
+    if (ownsFaq) return toast("You cannot answer your own FAQ");
     setBusy(true);
     try {
       await post(`/faqs/${id}/answers`, { body: answerBody, isAnonymous: anonymous });
@@ -541,20 +562,11 @@ function FaqDetailPage() {
       await Promise.all([loadFaq(), loadAnswers()]);
     } catch (error) { toast(error.message); } finally { setBusy(false); }
   }
-  async function generateSummary() {
-    setSummaryBusy(true);
-    try {
-      const data = await post(`/faqs/${id}/generate-summary`, {});
-      setFaq((current) => ({ ...current, aiSummary: data.summary, aiSummaryUpdatedAt: data.updatedAt }));
-      toast("AI summary updated");
-    } catch (error) { toast(error.message); } finally { setSummaryBusy(false); }
-  }
   async function share() {
     await navigator.clipboard.writeText(window.location.href);
     toast("Link copied to clipboard!");
   }
   if (!faq) return <Shell><PageLoader /></Shell>;
-  const name = authorName(faq);
   const ownsFaq = auth.user?._id === faq.author?._id;
   return <Shell><main className="detail-page">
     <section className="surface detail-header">
@@ -563,12 +575,12 @@ function FaqDetailPage() {
       <div className="detail-meta"><AuthorIdentity item={faq} meta={`${faq.author?.reputation ?? 0} reputation - asked ${relativeTime(faq.createdAt)}`} /><span><Eye size={15} /> {faq.viewCount} views</span></div>
       <div className="detail-actions"><button className={faq.upvoted ? "active" : ""} onClick={() => toggleFaqAction("upvote")}><ArrowUp size={16} /> {faq.upvotes} Upvote</button><button className={faq.saved ? "active" : ""} onClick={() => toggleFaqAction("save")}><Bookmark size={16} /> {faq.saved ? "Saved" : "Save"}</button><button className={faq.followed ? "active" : ""} onClick={toggleFollow}>{faq.followed ? <UserCheck size={16} /> : <UserPlus size={16} />} {faq.followed ? "Following" : "Follow"}</button><button onClick={share}><Link2 size={16} /> Share</button><button onClick={() => requireLogin() && setReport({ type: "faq", id })}><CircleAlert size={16} /> Report</button></div>
     </section>
-    <section className="surface summary-box"><span className="section-label"><Bot size={15} /> AI summary</span>{faq.aiSummary ? <><p>{faq.aiSummary}</p><small>Generated from community answers - updated {relativeTime(faq.aiSummaryUpdatedAt)}</small></> : <p>{faq.answerCount >= 3 ? "Turn the discussion into a quick practical summary." : "A summary can be generated once this question has at least 3 answers."}</p>}{faq.answerCount >= 3 && <button className="outline-button" disabled={summaryBusy} onClick={generateSummary}>{summaryBusy ? "Generating..." : faq.aiSummary ? "Regenerate" : "Generate AI summary"}</button>}</section>
+    <section className="surface summary-box"><span className="section-label"><Bot size={15} /> AI summary</span>{faq.aiSummary ? <><p>{faq.aiSummary}</p><small>Generated from verified community answers - updated {relativeTime(faq.aiSummaryUpdatedAt)}</small></> : <p>An AI summary will appear after an admin verifies a community answer.</p>}<small>Updates automatically when verified answers change.</small></section>
     <section className="answers-section"><div className="answers-heading"><h2>{faq.answerCount} Answers</h2><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="upvoted">Most upvoted</option><option value="newest">Newest</option><option value="oldest">Oldest</option></select></div>
       {answers.map((answer) => <AnswerCard key={answer._id} answer={answer} ownsFaq={ownsFaq} onReload={loadAnswers} onReport={() => setReport({ type: "answer", id: answer._id })} />)}
       {!answers.length && <div className="surface empty-state"><MessageCircle size={28} /><h3>No answers yet</h3><p>Be the first to help this student.</p></div>}
     </section>
-    <section className="surface answer-form" id="answer"><h2>Write Your Answer</h2>{auth.user ? <form onSubmit={submitAnswer}><textarea required minLength="20" maxLength="5000" value={answerBody} onChange={(event) => setAnswerBody(event.target.value)} placeholder="Share a clear, practical answer..." /><div className="answer-form-footer"><label className="check-label"><input type="checkbox" checked={anonymous} onChange={(event) => setAnonymous(event.target.checked)} /> Answer anonymously</label><small>{answerBody.length}/5000</small><button className="primary-button" disabled={busy}>{busy ? "Posting..." : "Post answer"}</button></div></form> : <div className="login-prompt">You must be logged in to post an answer. <Link className="outline-button" to="/login" state={{ from: `/faqs/${id}` }}>Login</Link></div>}</section>
+    <section className="surface answer-form" id="answer"><h2>Write Your Answer</h2>{ownsFaq ? <p className="answer-restriction">You cannot answer your own FAQ.</p> : auth.user ? <form onSubmit={submitAnswer}><textarea required minLength="20" maxLength="5000" value={answerBody} onChange={(event) => setAnswerBody(event.target.value)} placeholder="Share a clear, practical answer..." /><div className="answer-form-footer"><label className="check-label"><input type="checkbox" checked={anonymous} onChange={(event) => setAnonymous(event.target.checked)} /> Answer anonymously</label><small>{answerBody.length}/5000</small><button className="primary-button" disabled={busy}>{busy ? "Posting..." : "Post answer"}</button></div></form> : <div className="login-prompt">You must be logged in to post an answer. <Link className="outline-button" to="/login" state={{ from: `/faqs/${id}` }}>Login</Link></div>}</section>
     {report && <ReportModal report={report} onClose={() => setReport(null)} />}
   </main></Shell>;
 }
@@ -579,7 +591,9 @@ function AnswerCard({ answer, ownsFaq, onReload, onReport }) {
   const toast = useToast();
   const [comment, setComment] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const name = authorName(answer);
+  const hasLongAnswer = answer.body.length > 320;
   const upvoted = answer.upvotedBy.includes(auth.user?._id);
   const downvoted = answer.downvotedBy.includes(auth.user?._id);
   async function vote(type) {
@@ -592,6 +606,7 @@ function AnswerCard({ answer, ownsFaq, onReload, onReport }) {
   async function postComment(event) {
     event.preventDefault();
     if (!auth.user) return navigate("/login", { state: { message: "Please login to continue" } });
+    if (ownsFaq) return toast("You cannot comment on your own FAQ");
     setCommentBusy(true);
     try {
       await post(`/answers/${answer._id}/comments`, { body: comment });
@@ -600,7 +615,7 @@ function AnswerCard({ answer, ownsFaq, onReload, onReport }) {
       onReload();
     } catch (error) { toast(error.message); } finally { setCommentBusy(false); }
   }
-  return <article className={`surface answer-card ${answer.isAccepted ? "accepted" : ""}`}>{answer.isAccepted && <div className="best-answer"><CheckCircle2 size={15} /> Best Answer</div>}<div className="answer-card-header"><AuthorIdentity item={answer} color="green" meta={`${answer.author?.reputation ?? 0} reputation - answered ${relativeTime(answer.createdAt)}`} /><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? <CheckCircle2 size={13} /> : <CircleAlert size={13} />}{answer.isVerified ? "Verified" : "Unverified"}</span></div><p>{answer.body}</p><div className="answer-actions"><button className={upvoted ? "active" : ""} onClick={() => vote("upvote")}><ArrowUp size={15} /> {answer.upvotes}</button><button className={downvoted ? "active" : ""} onClick={() => vote("downvote")}><ArrowDown size={15} /> {answer.downvotes}</button>{ownsFaq && <button disabled={!answer.isVerified} title={answer.isVerified ? "Mark as Best Answer" : "Admin verification required"} onClick={accept}><Check size={15} /> Accept</button>}<button onClick={onReport}><CircleAlert size={15} /> Report</button></div><div className="comment-thread">{answer.comments?.map((item) => <div className="comment" key={item._id}>{item.author?._id ? <Link to={`/profile/${item.author._id}`}><b>{item.author.name}</b></Link> : <b>Student</b>}<span>{item.body}</span><small>{relativeTime(item.createdAt)}</small></div>)}<form className="comment-form" onSubmit={postComment}><input required minLength="2" maxLength="500" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment or mention @FirstName..." /><button disabled={commentBusy || !comment.trim()}><Send size={14} /></button></form></div></article>;
+  return <article className={`surface answer-card ${answer.isAccepted ? "accepted" : ""}`}>{answer.isAccepted && <div className="best-answer"><CheckCircle2 size={15} /> Best Answer</div>}<div className="answer-card-header"><AuthorIdentity item={answer} color="green" meta={`${answer.author?.reputation ?? 0} reputation - answered ${relativeTime(answer.createdAt)}`} /><span className={`verification-badge ${answer.isVerified ? "verified" : "unverified"}`}>{answer.isVerified ? <CheckCircle2 size={13} /> : <CircleAlert size={13} />}{answer.isVerified ? "Verified" : "Unverified"}</span></div><p className={`answer-body ${hasLongAnswer && !expanded ? "collapsed" : ""}`}>{answer.body}</p>{hasLongAnswer && <button className="answer-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : "Show more"} <ChevronDown size={14} /></button>}<div className="answer-actions"><button className={upvoted ? "active" : ""} onClick={() => vote("upvote")}><ArrowUp size={15} /> {answer.upvotes}</button><button className={downvoted ? "active" : ""} onClick={() => vote("downvote")}><ArrowDown size={15} /> {answer.downvotes}</button>{ownsFaq && <button disabled={!answer.isVerified} title={answer.isVerified ? "Mark as Best Answer" : "Admin verification required"} onClick={accept}><Check size={15} /> Accept</button>}<button onClick={onReport}><CircleAlert size={15} /> Report</button></div><div className="comment-thread">{answer.comments?.map((item) => <div className="comment" key={item._id}>{item.author?._id ? <Link to={`/profile/${item.author._id}`}><b>{item.author.name}</b></Link> : <b>Student</b>}<span>{item.body}</span><small>{relativeTime(item.createdAt)}</small></div>)}{ownsFaq ? <p className="comment-restriction">You cannot comment on your own FAQ.</p> : <form className="comment-form" onSubmit={postComment}><input required minLength="2" maxLength="500" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment or mention @FirstName..." /><button disabled={commentBusy || !comment.trim()}><Send size={14} /></button></form>}</div></article>;
 }
 
 function ReportModal({ report, onClose }) {
@@ -659,9 +674,9 @@ function ProfilePage() {
   }
   if (!data) return <Shell><PageLoader /></Shell>;
   const { user, faqs, answers, followerCount, followingCount, followedByViewer } = data;
-  return <Shell><main className="profile-page"><section className="surface profile-header"><span className="avatar avatar-blue large">{initials(user.name)}</span><div><h1>{user.name}</h1><p>{user.branch || "Branch not set"} {user.semester && `- Semester ${user.semester}`}</p><b>{user.reputation} reputation</b></div>{own ? <button className="outline-button" onClick={() => setEditing(!editing)}><Pencil size={15} /> Edit profile</button> : <button className={`outline-button ${followedByViewer ? "active" : ""}`} onClick={toggleProfileFollow}>{followedByViewer ? <UserCheck size={15} /> : <UserPlus size={15} />}{followedByViewer ? "Following" : "Follow student"}</button>}</section>
+  return <Shell><main className="profile-page"><section className="surface profile-header"><span className="avatar avatar-blue large">{initials(user.name)}</span><div><h1>{user.name}</h1><p>{user.branch || "Branch not set"} {user.semester && `- Semester ${user.semester}`}</p><b>{user.reputation} reputation</b>{user.bio && <p className="profile-bio">{user.bio}</p>}</div>{own ? <button className="outline-button" onClick={() => setEditing(!editing)}><Pencil size={15} /> Edit profile</button> : <button className={`outline-button ${followedByViewer ? "active" : ""}`} onClick={toggleProfileFollow}>{followedByViewer ? <UserCheck size={15} /> : <UserPlus size={15} />}{followedByViewer ? "Following" : "Follow student"}</button>}</section>
     <section className="stats-grid"><Stat label="Questions asked" value={user.questionsAsked} /><Stat label="Answers given" value={user.answersGiven} /><Stat label="Accepted answers" value={user.acceptedAnswers} /><Stat label="Reputation" value={user.reputation} /><Stat label="Followers" value={followerCount} active={networkTab === "followers"} onClick={own ? () => setNetworkTab(networkTab === "followers" ? null : "followers") : undefined} /><Stat label="Following" value={followingCount} active={networkTab === "following"} onClick={own ? () => setNetworkTab(networkTab === "following" ? null : "following") : undefined} /></section>
-    {editing && <form className="surface form-grid profile-edit" onSubmit={save}><h2>Edit profile</h2><Field label="Name"><input value={form.name ?? ""} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><div className="form-row"><Field label="Branch"><select value={form.branch ?? ""} onChange={(event) => setForm({ ...form, branch: event.target.value })}><option value="">Select</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></Field><Field label="Semester"><select value={form.semester ?? ""} onChange={(event) => setForm({ ...form, semester: event.target.value })}><option value="">Select</option>{[1, 2, 3, 4, 5, 6, 7, 8].map((semester) => <option key={semester}>{semester}</option>)}</select></Field></div><Field label={`Bio (${form.bio?.length ?? 0}/200)`}><textarea maxLength="200" value={form.bio ?? ""} onChange={(event) => setForm({ ...form, bio: event.target.value })} /></Field><Field label="Profile picture URL"><input value={form.profilePicture ?? ""} onChange={(event) => setForm({ ...form, profilePicture: event.target.value })} /></Field><button className="primary-button">Save profile</button></form>}
+    {editing && <form className="surface form-grid profile-edit" onSubmit={save}><h2>Edit profile</h2><Field label="Name"><input value={form.name ?? ""} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field><div className="form-row"><Field label="Branch"><select value={form.branch ?? ""} onChange={(event) => setForm({ ...form, branch: event.target.value })}><option value="">Select</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></Field><Field label="Semester"><select value={form.semester ?? ""} onChange={(event) => setForm({ ...form, semester: event.target.value })}><option value="">Select</option>{[1, 2, 3, 4, 5, 6, 7, 8].map((semester) => <option key={semester}>{semester}</option>)}</select></Field></div><Field label={`Bio (${form.bio?.length ?? 0}/200)`}><textarea maxLength="200" value={form.bio ?? ""} onChange={(event) => setForm({ ...form, bio: event.target.value })} /></Field><button className="primary-button">Save profile</button></form>}
     <ProfileList title="Recent questions" empty="No questions posted yet.">{faqs.map((faq) => <Link key={faq._id} to={`/faqs/${faq._id}`}>{faq.title}<small>{faq.category} - {relativeTime(faq.createdAt)}</small></Link>)}</ProfileList>
     <ProfileList title="Recent answers" empty="No answers posted yet.">{answers.map((answer) => <Link key={answer._id} to={`/faqs/${answer.faq?._id}`}>{answer.faq?.title}<small>{answer.body.slice(0, 100)}</small></Link>)}</ProfileList>
     {own && <ProfileList title="Saved FAQs" empty="No bookmarks yet.">{saved.map((faq) => <Link key={faq._id} to={`/faqs/${faq._id}`}>{faq.title}<small>{faq.category}</small></Link>)}</ProfileList>}
@@ -700,7 +715,7 @@ function AdminPage() {
   async function ban(id) { try { await patch(`/admin/users/${id}/ban`); toast("User status updated"); load(); } catch (error) { toast(error.message); } }
   async function deleteFaq(id) { if (!window.confirm("Delete this FAQ and all of its answers?")) return; try { await remove(`/admin/faqs/${id}`); toast("FAQ deleted"); load(); } catch (error) { toast(error.message); } }
   async function resolve(id) { try { await patch(`/admin/reports/${id}`); toast("Report resolved"); load(); } catch (error) { toast(error.message); } }
-  async function verifyAnswer(id) { try { const data = await patch(`/admin/answers/${id}/verify`); toast(data.answer.isVerified ? "Answer verified" : "Answer marked unverified"); load(); } catch (error) { toast(error.message); } }
+  async function verifyAnswer(id) { try { const data = await patch(`/admin/answers/${id}/verify`); toast(data.summaryRefresh.updated ? data.answer.isVerified ? "Answer verified and AI summary updated" : "Answer marked unverified and AI summary refreshed" : data.answer.isVerified ? "Answer verified, but AI summary could not update" : "Answer marked unverified"); load(); } catch (error) { toast(error.message); } }
   async function deleteReportedContent(report) {
     if (!window.confirm("Delete the reported content?")) return;
     try {
