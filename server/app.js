@@ -23,7 +23,10 @@ validateEnv();
 const app = express();
 
 app.use(helmet());
-app.use(cors());
+const allowedOrigins = process.env.FRONTEND_ORIGIN
+  ? process.env.FRONTEND_ORIGIN.split(",").map((o) => o.trim())
+  : ["http://localhost:5174", "http://127.0.0.1:5174"];
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(mongoSanitize());
 app.use(express.json({ limit: "5mb" }));
 
@@ -47,7 +50,9 @@ app.get("*", (_request, response) => {
 
 app.use((error, _request, response, _next) => {
   console.error("Unhandled error:", error.message);
-  response.status(500).json({ error: error.message || "Internal server error" });
+  const isProd = process.env.NODE_ENV === "production";
+  response.status(500).json({ error: isProd ? "Internal server error" : (error.message || "Internal server error") });
 });
+
 
 export default app;
