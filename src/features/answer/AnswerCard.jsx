@@ -124,7 +124,7 @@ export default function AnswerCard({ answer, ownsFaq, onReload, onReport }) {
       <p className={`answer-body ${hasLongAnswer && !expanded ? "collapsed" : ""}`}>{answer.body}</p>
       {hasLongAnswer && <button className="answer-toggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : "Show more"} <ChevronDown size={14} /></button>}
       <div className="answer-actions">
-        <button className={upvoted ? "active" : ""} onClick={() => vote("upvote")}><Heart size={15} fill={upvoted ? "currentColor" : "none"} /> {answer.upvotes}</button>
+        <button className={upvoted ? "active" : ""} onClick={() => vote("upvote")}><ArrowUp size={15} /> {answer.upvotes}</button>
         <button className={downvoted ? "active" : ""} onClick={() => vote("downvote")}><ArrowDown size={15} /> {answer.downvotes}</button>
         {ownsFaq && <button disabled={!answer.isVerified} title={answer.isAccepted ? "Remove Best Answer" : answer.isVerified ? "Mark as Best Answer" : "Admin verification required"} onClick={accept}>{answer.isAccepted ? <X size={15} /> : <Check size={15} />}{answer.isAccepted ? "Unaccept" : "Accept"}</button>}
         <button title="Report" onClick={onReport}><CircleAlert size={15} /></button>
